@@ -1,0 +1,118 @@
+/* =====================================================
+ * common_button.qss - 通用按钮样式 (浅色)
+ * ===================================================== */
+
+QPushButton {
+    background-color: #FFFFFF;
+    border: 1px solid #C0C0C0;
+    border-radius: 4px;
+    padding: 6px 16px;
+    color: #1E1E1E;
+    min-height: 24px;
+    outline: 0;
+}
+
+QPushButton:hover {
+    background-color: #F5F5F5;
+    border-color: #0078D4;
+    color: #0078D4;
+}
+
+QPushButton:pressed {
+    background-color: #E5E5E5;
+    border-color: #005A9E;
+    padding-top: 7px;
+    padding-bottom: 5px;
+}
+
+QPushButton:disabled {
+    background-color: #F0F0F0;
+    color: #A0A0A0;
+    border-color: #D0D0D0;
+}
+
+QPushButton:checked {
+    background-color: #0078D4;
+    color: white;
+    border-color: #0078D4;
+}
+
+QPushButton:checked:hover {
+    background-color: #1A88E4;
+}
+
+/* ===== 类型变体 (通过 dynamic property "type" 区分) ===== */
+
+/* 主操作按钮 (蓝色) */
+QPushButton[type="primary"] {
+    background-color: #0078D4;
+    border-color: #0078D4;
+    color: white;
+    font-weight: bold;
+}
+
+QPushButton[type="primary"]:hover {
+    background-color: #1A88E4;
+    border-color: #1A88E4;
+    color: white;
+}
+
+QPushButton[type="primary"]:pressed {
+    background-color: #0068C4;
+    border-color: #0068C4;
+    color: white;
+}
+
+QPushButton[type="primary"]:disabled {
+    background-color: #B0C4D4;
+    color: #FFFFFF;
+    border-color: #B0C4D4;
+}
+
+/* 危险按钮 (急停 - 红色) */
+QPushButton[type="danger"] {
+    background-color: #D32F2F;
+    border-color: #D32F2F;
+    color: white;
+    font-weight: bold;
+}
+
+QPushButton[type="danger"]:hover {
+    background-color: #E33F3F;
+    border-color: #E33F3F;
+    color: white;
+}
+
+QPushButton[type="danger"]:pressed {
+    background-color: #B22020;
+    border-color: #B22020;
+    color: white;
+}
+
+QPushButton[type="danger"]:disabled {
+    background-color: #E0B0B0;
+    color: #FFFFFF;
+    border-color: #E0B0B0;
+}
+
+/* 方向控制按钮 (大尺寸) */
+QPushButton[type="direction"] {
+    min-width: 80px;
+    min-height: 60px;
+    font-size: 16px;
+    font-weight: bold;
+    background-color: #FFFFFF;
+    border: 2px solid #C0C0C0;
+}
+
+QPushButton[type="direction"]:hover {
+    background-color: #F5F5F5;
+    border-color: #0078D4;
+    color: #0078D4;
+}
+
+QPushButton[type="direction"]:pressed {
+    background-color: #0078D4;
+    color: white;
+    border-color: #0078D4;
+}

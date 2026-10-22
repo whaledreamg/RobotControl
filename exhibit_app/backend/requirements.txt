@@ -1,0 +1,9 @@
+fastapi>=0.110
+uvicorn[standard]>=0.27
+pydantic>=2.6
+websockets>=12.0
+python-multipart>=0.0.9
+
+# 复用本机现有通信层依赖
+PySide6>=6.5
+websocket-client>=1.6

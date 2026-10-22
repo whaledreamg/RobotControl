@@ -1,0 +1,180 @@
+/* =====================================================
+ * dialogs/mapinfodialog.qss - 地图绘制弹窗样式 (果冻风)
+ * 配合全局主题：淡冷蓝背景 + 半透明白色卡片
+ * ===================================================== */
+
+MapInfoDialog {
+    background-color: #F2F4F8;
+}
+
+/* ---------- 顶部控制条 ---------- */
+MapInfoDialog QLabel[role="title"] {
+    color: #2C3E50;
+    font-weight: bold;
+    background: transparent;
+}
+
+MapInfoDialog QLabel[role="mapName"] {
+    color: #0078D4;
+    font-weight: bold;
+    font-size: 13pt;
+    background: transparent;
+}
+
+MapInfoDialog QLabel[role="points"] {
+    color: #5A6A7E;
+    background: transparent;
+    padding: 0 8px;
+}
+
+MapInfoDialog QLabel[role="hint"] {
+    color: #8A99AD;
+    background: transparent;
+    font-size: 10pt;
+}
+
+MapInfoDialog QLabel[role="zoomLabel"] {
+    color: #5A6A7E;
+    background: transparent;
+}
+
+/* ---------- 缩放 slider ---------- */
+MapInfoDialog QSlider {
+    background: transparent;
+}
+
+MapInfoDialog QSlider::groove:horizontal {
+    background: rgba(140, 160, 190, 60);
+    height: 6px;
+    border-radius: 3px;
+}
+
+MapInfoDialog QSlider::handle:horizontal {
+    background: #4A90E2;
+    width: 18px; height: 18px;
+    margin: -7px 0;
+    border-radius: 9px;
+    border: 2px solid #FFFFFF;
+}
+
+MapInfoDialog QSlider::handle:horizontal:hover {
+    background: #357ABD;
+}
+
+MapInfoDialog QSlider::sub-page:horizontal {
+    background: #4A90E2;
+    height: 6px;
+    border-radius: 3px;
+}
+
+/* ---------- 按钮 (按 role) ---------- */
+MapInfoDialog QPushButton {
+    background-color: rgba(255, 255, 255, 230);
+    color: #2C3E50;
+    border: 1px solid rgba(140, 160, 190, 80);
+    border-radius: 8px;
+    padding: 6px 16px;
+    min-height: 26px;
+    font-weight: 500;
+}
+
+MapInfoDialog QPushButton:hover {
+    background-color: #EAF0F7;
+    border: 1px solid rgba(74, 144, 226, 120);
+}
+
+MapInfoDialog QPushButton:pressed {
+    background-color: rgba(74, 144, 226, 30);
+    color: #357ABD;
+}
+
+MapInfoDialog QPushButton:disabled {
+    background-color: rgba(220, 228, 238, 120);
+    color: #8A99AD;
+    border: 1px solid rgba(140, 160, 190, 40);
+}
+
+MapInfoDialog QPushButton[role="primary"] {
+    background-color: rgba(74, 144, 226, 90);
+    color: #357ABD;
+    border: 1px solid rgba(74, 144, 226, 180);
+}
+
+MapInfoDialog QPushButton[role="primary"]:hover {
+    background-color: #4A90E2;
+    color: #FFFFFF;
+}
+
+MapInfoDialog QPushButton[role="primary"]:pressed {
+    background-color: #357ABD;
+    color: #FFFFFF;
+}
+
+MapInfoDialog QPushButton[role="success"] {
+    background-color: rgba(94, 201, 159, 90);
+    color: #3FA37A;
+    border: 1px solid rgba(94, 201, 159, 180);
+}
+
+MapInfoDialog QPushButton[role="success"]:hover {
+    background-color: #5EC99F;
+    color: #FFFFFF;
+}
+
+MapInfoDialog QPushButton[role="warning"] {
+    background-color: rgba(244, 162, 97, 90);
+    color: #D98A4A;
+    border: 1px solid rgba(244, 162, 97, 180);
+}
+
+MapInfoDialog QPushButton[role="warning"]:hover {
+    background-color: #F4A261;
+    color: #FFFFFF;
+}
+
+MapInfoDialog QPushButton[role="danger"] {
+    background-color: rgba(239, 111, 108, 90);
+    color: #C44A47;
+    border: 1px solid rgba(239, 111, 108, 180);
+}
+
+MapInfoDialog QPushButton[role="danger"]:hover {
+    background-color: #EF6F6C;
+    color: #FFFFFF;
+}
+
+MapInfoDialog QPushButton[role="close"] {
+    background-color: rgba(140, 160, 190, 30);
+    color: #5A6A7E;
+    border: 1px solid rgba(140, 160, 190, 80);
+}
+
+MapInfoDialog QPushButton[role="close"]:hover {
+    background-color: rgba(140, 160, 190, 60);
+    color: #2C3E50;
+}
+
+/* ---------- 图形视图 ---------- */
+MapInfoDialog QGraphicsView {
+    background-color: #FAFAFA;
+    border: 1px solid rgba(140, 160, 190, 60);
+    border-radius: 8px;
+}
+
+/* ---------- 底部状态条 ---------- */
+MapInfoDialog QLabel#lblStatus {
+    color: #7F8C8D;
+    background: transparent;
+    padding: 4px 8px;
+    font-size: 11pt;
+    border-top: 1px solid rgba(140, 160, 190, 40);
+}
+
+/* ---------- 工具提示 ---------- */
+MapInfoDialog QToolTip {
+    background-color: #2C3E50;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 6px;
+    padding: 4px 8px;
+}

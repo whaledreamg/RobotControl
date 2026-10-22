@@ -1,0 +1,32 @@
+/* =====================================================
+ * common_label.qss - 标签样式 (浅色)
+ * ===================================================== */
+
+QLabel {
+    color: #1E1E1E;
+    background-color: transparent;
+    padding: 0;
+}
+
+QLabel:disabled {
+    color: #A0A0A0;
+}
+
+QLabel#statusLabel {
+    font-weight: bold;
+    padding: 0 8px;
+    color: #555555;
+    font-size: 13px;
+}
+
+QLabel#statusLabel[status="connected"] {
+    color: #2E7D32;
+}
+
+QLabel#statusLabel[status="disconnected"] {
+    color: #C62828;
+}
+
+QLabel#statusLabel[status="warning"] {
+    color: #EF6C00;
+}

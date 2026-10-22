@@ -1,0 +1,4 @@
+1.所有功能都作在一个界面，每个部分我都进行了模块划分。
+2.wd_connect的QWidget进行的是设备的连接按钮及其状态
+3.wd_agv的QWidget进行的是AGV的开环控制和导航功能，参考"/home/gxh/workspace/project/SeerAgv/form/mapform.h"里面的实现，其中的重定位和地图显示就不需要了。
+4.wd_arm

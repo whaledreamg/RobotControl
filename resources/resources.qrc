@@ -1,0 +1,25 @@
+<RCC>
+    <qresource prefix="/resources">
+        <!-- 全局与主题 -->
+        <file alias="styles/global.qss">styles/global.qss</file>
+        <file alias="styles/theme_dark.qss">styles/theme_dark.qss</file>
+        <file alias="styles/theme_light.qss">styles/theme_light.qss</file>
+
+        <!-- 通用控件 -->
+        <file alias="styles/common/common_button.qss">styles/common/common_button.qss</file>
+        <file alias="styles/common/common_input.qss">styles/common/common_input.qss</file>
+        <file alias="styles/common/common_label.qss">styles/common/common_label.qss</file>
+        <file alias="styles/common/common_combobox.qss">styles/common/common_combobox.qss</file>
+        <file alias="styles/common/common_slider.qss">styles/common/common_slider.qss</file>
+        <file alias="styles/common/common_groupbox.qss">styles/common/common_groupbox.qss</file>
+        <file alias="styles/common/common_scrollbar.qss">styles/common/common_scrollbar.qss</file>
+
+        <!-- 主窗口 -->
+        <file alias="styles/mainwindow.qss">styles/mainwindow.qss</file>
+
+        <!-- 对话框 -->
+        <file alias="styles/dialogs/settingsdialog.qss">styles/dialogs/settingsdialog.qss</file>
+        <file alias="styles/dialogs/mapinfodialog.qss">styles/dialogs/mapinfodialog.qss</file>
+        <file alias="styles/dialogs/webviewdialog.qss">styles/dialogs/webviewdialog.qss</file>
+    </qresource>
+</RCC>

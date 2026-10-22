@@ -1,0 +1,89 @@
+/* =====================================================
+ * dialogs/webviewdialog.qss - WebView 弹窗样式 (果冻风)
+ * ===================================================== */
+
+WebViewDialog {
+    background-color: #F2F4F8;
+}
+
+/* ---------- 顶部工具栏 ---------- */
+WebViewDialog QLabel[role="title"] {
+    color: #2C3E50;
+    font-weight: bold;
+    background: transparent;
+}
+
+WebViewDialog QPushButton {
+    background-color: rgba(255, 255, 255, 230);
+    color: #2C3E50;
+    border: 1px solid rgba(140, 160, 190, 80);
+    border-radius: 8px;
+    padding: 6px 14px;
+    min-height: 26px;
+    font-weight: 500;
+}
+
+WebViewDialog QPushButton:hover {
+    background-color: #EAF0F7;
+    border: 1px solid rgba(74, 144, 226, 120);
+}
+
+WebViewDialog QPushButton:pressed {
+    background-color: rgba(74, 144, 226, 30);
+    color: #357ABD;
+}
+
+WebViewDialog QPushButton[role="navBtn"] {
+    min-width: 32px;
+    max-width: 32px;
+    padding: 6px 4px;
+    font-size: 12pt;
+}
+
+WebViewDialog QPushButton[role="primary"] {
+    background-color: rgba(74, 144, 226, 90);
+    color: #357ABD;
+    border: 1px solid rgba(74, 144, 226, 180);
+}
+
+WebViewDialog QPushButton[role="primary"]:hover {
+    background-color: #4A90E2;
+    color: #FFFFFF;
+}
+
+WebViewDialog QPushButton[role="close"] {
+    background-color: rgba(239, 111, 108, 30);
+    color: #C44A47;
+    border: 1px solid rgba(239, 111, 108, 120);
+}
+
+WebViewDialog QPushButton[role="close"]:hover {
+    background-color: rgba(239, 111, 108, 90);
+    color: #FFFFFF;
+}
+
+/* ---------- URL 输入框 ---------- */
+WebViewDialog QLineEdit {
+    background-color: #FFFFFF;
+    border: 1px solid rgba(140, 160, 190, 120);
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: #2C3E50;
+    selection-background-color: rgba(74, 144, 226, 30);
+}
+
+WebViewDialog QLineEdit:focus {
+    border: 1.5px solid #4A90E2;
+}
+
+WebViewDialog QLineEdit:disabled {
+    background-color: rgba(220, 228, 238, 150);
+    color: #8A99AD;
+}
+
+/* ---------- WebView 内容区 ---------- */
+WebViewDialog QWebEngineView {
+    background-color: #FFFFFF;
+    border: 1px solid rgba(140, 160, 190, 60);
+    border-radius: 8px;
+}

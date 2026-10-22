@@ -1,0 +1,27 @@
+/* =====================================================
+ * global.qss - 全局基础样式 (白色背景)
+ * ===================================================== */
+
+* {
+    font-family: "Microsoft YaHei", "PingFang SC", "WenQuanYi Micro Hei", "Arial", sans-serif;
+    font-size: 12px;
+    color: #1E1E1E;
+}
+
+QWidget {
+    background-color: #FFFFFF;
+}
+
+QMainWindow {
+    background-color: #F5F5F5;
+}
+
+QDialog {
+    background-color: #FFFFFF;
+}
+
+QStatusBar {
+    background-color: #F0F0F0;
+    color: #555555;
+    border-top: 1px solid #D0D0D0;
+}

@@ -1,0 +1,41 @@
+/* =====================================================
+ * dialogs/settingsdialog.qss - 设置对话框样式 (浅色)
+ * ===================================================== */
+
+QDialog {
+    background-color: #FFFFFF;
+}
+
+QTabWidget::pane {
+    border: 1px solid #D0D0D0;
+    background-color: #FFFFFF;
+    border-radius: 4px;
+}
+
+QTabBar::tab {
+    background-color: #F0F0F0;
+    color: #555555;
+    padding: 8px 20px;
+    border: 1px solid #D0D0D0;
+    border-bottom: none;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+}
+
+QTabBar::tab:selected {
+    background-color: #FFFFFF;
+    color: #0078D4;
+    border-bottom: 2px solid #0078D4;
+}
+
+QFormLayout QLabel {
+    color: #333333;
+}
+
+QDialogButtonBox {
+    background-color: transparent;
+}
+
+QPushButton {
+    min-width: 80px;
+}

@@ -1,0 +1,41 @@
+/* =====================================================
+ * common_input.qss - 输入框样式 (浅色)
+ * ===================================================== */
+
+QLineEdit, QSpinBox, QDoubleSpinBox {
+    background-color: #FFFFFF;
+    border: 1px solid #C0C0C0;
+    border-radius: 3px;
+    padding: 4px 8px;
+    color: #1E1E1E;
+    min-height: 22px;
+    selection-background-color: #0078D4;
+    selection-color: white;
+}
+
+QLineEdit:hover, QSpinBox:hover, QDoubleSpinBox:hover {
+    border-color: #888888;
+}
+
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {
+    border-color: #0078D4;
+    background-color: #FFFFFF;
+}
+
+QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled {
+    background-color: #F0F0F0;
+    color: #A0A0A0;
+    border-color: #D0D0D0;
+}
+
+QSpinBox::up-button, QDoubleSpinBox::up-button,
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+    width: 16px;
+    background-color: #E8E8E8;
+    border: 1px solid #C0C0C0;
+}
+
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
+    background-color: #D0D0D0;
+}

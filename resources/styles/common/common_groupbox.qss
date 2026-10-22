@@ -1,0 +1,27 @@
+/* =====================================================
+ * common_groupbox.qss - 分组框样式 (浅色)
+ * ===================================================== */
+
+QGroupBox {
+    background-color: #FFFFFF;
+    border: 1px solid #D0D0D0;
+    border-radius: 6px;
+    margin-top: 14px;
+    padding: 10px;
+    font-weight: normal;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 10px;
+    padding: 0 6px;
+    color: #0078D4;
+    font-weight: bold;
+    background-color: #F5F5F5;
+}
+
+QGroupBox:disabled {
+    color: #A0A0A0;
+    border-color: #E0E0E0;
+}

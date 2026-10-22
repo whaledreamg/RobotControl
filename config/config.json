@@ -1,0 +1,19 @@
+{
+    "ip": "192.168.100.16",
+    "agv_ip": "192.168.100.101",
+    
+    "arm": {
+        "websocket_port": 9000,
+        "left_arm_name": "LeftArm",
+        "right_arm_name": "RightArm",
+        "push_interval": 100
+    },
+    
+    "agv": {
+        "pushback_port": 19301,
+        "control_port": 19205,
+        "nav_port": 19206,
+        "other_port": 19210,
+        "status_port": 19204
+    }
+}

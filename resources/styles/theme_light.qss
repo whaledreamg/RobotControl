@@ -1,0 +1,78 @@
+/* =====================================================
+ * theme_light.qss - 浅色主题 (默认)
+ * ===================================================== */
+
+QWidget {
+    background-color: #FFFFFF;
+    color: #1E1E1E;
+}
+
+QGroupBox {
+    background-color: #FFFFFF;
+    border: 1px solid #D0D0D0;
+    border-radius: 6px;
+    margin-top: 16px;
+    padding: 14px 10px 10px 10px;
+    color: #333333;
+    font-weight: bold;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 12px;
+    padding: 0 6px;
+    color: #0078D4;
+    background-color: #F5F5F5;
+}
+
+QGroupBox#topGroup {
+    background-color: #F5F5F5;
+    border: 1px solid #D0D0D0;
+}
+
+QGroupBox#agvSection,
+QGroupBox#armSection,
+QGroupBox#rightSection {
+    background-color: #FAFAFA;
+    border: 1px solid #C8C8C8;
+    border-radius: 8px;
+    margin-top: 12px;
+}
+
+QGroupBox#agvSection::title,
+QGroupBox#armSection::title,
+QGroupBox#rightSection::title {
+    color: #0078D4;
+    font-size: 13px;
+    font-weight: bold;
+    padding: 2px 8px;
+    background-color: #FFFFFF;
+    border: 1px solid #D0D0D0;
+    border-radius: 4px;
+}
+
+QTabWidget::pane {
+    border: 1px solid #D0D0D0;
+    background-color: #FFFFFF;
+}
+
+QTabBar::tab {
+    background-color: #E8E8E8;
+    color: #4A4A4A;
+    padding: 8px 20px;
+    border: 1px solid #D0D0D0;
+    border-bottom: none;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+}
+
+QTabBar::tab:selected {
+    background-color: #FFFFFF;
+    color: #0078D4;
+    border-bottom: 2px solid #0078D4;
+}
+
+QTabBar::tab:hover {
+    background-color: #F0F0F0;
+}

@@ -1,0 +1,427 @@
+/* =====================================================
+ * mainwindow.qss - 机器人综合控制系统 (果冻风, 紧凑布局)
+ * 使用类型 + role 属性选择器
+ * ===================================================== */
+
+QMainWindow#mainWindow {
+    background-color: #F2F4F8;
+}
+
+QWidget#centralWidget {
+    background-color: #F2F4F8;
+}
+
+/* ---------- 顶部连接卡 ---------- */
+QFrame#topBar {
+    background-color: rgba(255, 255, 255, 230);
+    border: 1px solid rgba(200, 210, 230, 180);
+    border-radius: 12px;
+}
+
+QLabel#lblTitle {
+    color: #1E1E1E;
+    font-weight: bold;
+    background: transparent;
+}
+QLabel#lblSubtitle {
+    color: #8A93A6;
+    background: transparent;
+    font-size: 9pt;
+}
+
+QLabel#lblArmIpTitle, QLabel#lblAgvIpTitle,
+QLabel#lblArmSpeedSlow, QLabel#lblArmSpeedFast,
+QLabel#lblNavStationTitle, QLabel#lblGripperForceTitle,
+QLabel#lblLiftDeviceTitle, QLabel#lblLiftTargetTitle,
+QLabel#lblLiftSpeedTitle, QLabel#lblLiftJogSpeedTitle,
+QLabel#lblLiftJogTimeoutTitle {
+    color: #5A6478;
+    font-size: 11pt;
+    background: transparent;
+}
+
+QLineEdit#editArmIp, QLineEdit#editAgvIp {
+    background-color: #FFFFFF;
+    border: 1px solid #D0D6E0;
+    border-radius: 6px;
+    padding: 4px 8px;
+    min-height: 24px;
+}
+QLineEdit#editArmIp:focus, QLineEdit#editAgvIp:focus {
+    border-color: #0078D4;
+}
+
+QFrame#sep1, QFrame#sep2 {
+    color: #C8D0E0;
+    background: #C8D0E0;
+}
+
+/* 通用按钮 (果冻风) - 使用 objectName 区分 (无重复) */
+QPushButton#btnConnect, QPushButton#btnArmView, QPushButton#btnLiftMove, QPushButton#btnLiftJogUp, QPushButton#btnLiftJogDown, QPushButton#btnGripperOpen {
+    background-color: rgba(0, 120, 212, 60);
+    color: #0078D4;
+    border: none;
+    border-radius: 10px;
+    padding: 6px 16px;
+    font-weight: bold;
+    font-size: 13px;
+}
+QPushButton#btnConnect:hover, QPushButton#btnConnect:pressed,
+QPushButton#btnArmView:hover, QPushButton#btnArmView:pressed,
+QPushButton#btnLiftMove:hover, QPushButton#btnLiftMove:pressed,
+QPushButton#btnLiftJogUp:hover, QPushButton#btnLiftJogUp:pressed,
+QPushButton#btnLiftJogDown:hover, QPushButton#btnLiftJogDown:pressed,
+QPushButton#btnGripperOpen:hover, QPushButton#btnGripperOpen:pressed {
+    background-color: #0078D4;
+    color: white;
+}
+QPushButton#btnConnect:disabled {
+    background-color: rgba(220, 228, 238, 120);
+    color: #999999;
+}
+
+QPushButton#btnArmProjectStart, QPushButton#btnLiftEnable, QPushButton#btnAgvNavStart {
+    background-color: rgba(46, 125, 50, 60);
+    color: #2E7D32;
+    border: none;
+    border-radius: 10px;
+    padding: 6px 16px;
+    font-weight: bold;
+    font-size: 13px;
+}
+QPushButton#btnArmProjectStart:hover, QPushButton#btnArmProjectStart:pressed,
+QPushButton#btnLiftEnable:hover, QPushButton#btnLiftEnable:pressed,
+QPushButton#btnAgvNavStart:hover, QPushButton#btnAgvNavStart:pressed {
+    background-color: #2E7D32;
+    color: white;
+}
+QPushButton#btnArmProjectStart:disabled,
+QPushButton#btnAgvNavStart:disabled {
+    background-color: rgba(220, 228, 238, 120);
+    color: #999999;
+}
+
+QPushButton#btnClearError, QPushButton#btnArmProjectPause, QPushButton#btnGripperClose, QPushButton#btnLiftDisable {
+    background-color: rgba(255, 152, 0, 60);
+    color: #C77700;
+    border: none;
+    border-radius: 10px;
+    padding: 6px 16px;
+    font-weight: bold;
+    font-size: 13px;
+}
+QPushButton#btnClearError:hover, QPushButton#btnClearError:pressed,
+QPushButton#btnArmProjectPause:hover, QPushButton#btnArmProjectPause:pressed,
+QPushButton#btnGripperClose:hover, QPushButton#btnGripperClose:pressed,
+QPushButton#btnLiftDisable:hover, QPushButton#btnLiftDisable:pressed {
+    background-color: #FF9800;
+    color: white;
+}
+QPushButton#btnArmProjectPause:disabled {
+    background-color: rgba(220, 228, 238, 120);
+    color: #999999;
+}
+
+QPushButton#btnEstop, QPushButton#btnArmProjectStop, QPushButton#btnAgvEmergency, QPushButton#btnGripperStop, QPushButton#btnLiftStop {
+    background-color: rgba(211, 47, 47, 60);
+    color: #C62828;
+    border: none;
+    border-radius: 10px;
+    padding: 6px 16px;
+    font-weight: bold;
+    font-size: 13px;
+}
+QPushButton#btnEstop:hover, QPushButton#btnEstop:pressed,
+QPushButton#btnArmProjectStop:hover, QPushButton#btnArmProjectStop:pressed,
+QPushButton#btnAgvEmergency:hover, QPushButton#btnAgvEmergency:pressed,
+QPushButton#btnGripperStop:hover, QPushButton#btnGripperStop:pressed,
+QPushButton#btnLiftStop:hover, QPushButton#btnLiftStop:pressed {
+    background-color: #D32F2F;
+    color: white;
+}
+QPushButton#btnArmProjectStop:disabled,
+QPushButton#btnAgvEmergency:disabled {
+    background-color: rgba(220, 228, 238, 120);
+    color: #999999;
+}
+
+QPushButton#btnSettings, QPushButton#btnViewMap, QPushButton#btnAgvNavCancel, QPushButton#btnArmRefresh, QPushButton#btnLiftClearError, QPushButton#btnLiftRefresh, QPushButton#btnLiftSetZero {
+    background-color: rgba(106, 27, 154, 60);
+    color: #6A1B9A;
+    border: none;
+    border-radius: 10px;
+    padding: 6px 16px;
+    font-weight: bold;
+    font-size: 13px;
+}
+QPushButton#btnSettings:hover, QPushButton#btnSettings:pressed,
+QPushButton#btnViewMap:hover, QPushButton#btnViewMap:pressed,
+QPushButton#btnAgvNavCancel:hover, QPushButton#btnAgvNavCancel:pressed,
+QPushButton#btnArmRefresh:hover, QPushButton#btnArmRefresh:pressed,
+QPushButton#btnLiftClearError:hover, QPushButton#btnLiftClearError:pressed,
+QPushButton#btnLiftRefresh:hover, QPushButton#btnLiftRefresh:pressed,
+QPushButton#btnLiftSetZero:hover, QPushButton#btnLiftSetZero:pressed {
+    background-color: #6A1B9A;
+    color: white;
+}
+QPushButton#btnAgvNavCancel:disabled {
+    background-color: rgba(220, 228, 238, 120);
+    color: #999999;
+}
+
+QPushButton#btnArmProjectResume {
+    background-color: rgba(0, 120, 212, 60);
+    color: #0078D4;
+    border: none;
+    border-radius: 10px;
+    padding: 6px 16px;
+    font-weight: bold;
+    font-size: 13px;
+}
+QPushButton#btnArmProjectResume:hover, QPushButton#btnArmProjectResume:pressed {
+    background-color: #0078D4;
+    color: white;
+}
+QPushButton#btnArmProjectResume:disabled {
+    background-color: rgba(220, 228, 238, 120);
+    color: #999999;
+}
+
+/* 顶部状态点 (使用 objectName 选择器) */
+QLabel#armStatusDot, QLabel#agvStatusDot {
+    font-size: 14pt;
+    color: #999999;
+}
+QLabel#armStatusLabel, QLabel#agvStatusLabel {
+    color: #5A6478;
+    font-size: 12px;
+    background: transparent;
+}
+
+/* ---------- 通用 GroupBox ---------- */
+QGroupBox {
+    background-color: rgba(255, 255, 255, 230);
+    border: 1px solid rgba(200, 210, 230, 180);
+    border-radius: 10px;
+    margin-top: 14px;
+    padding: 10px;
+}
+QGroupBox::title {
+    color: #0078D4;
+    background-color: #F2F4F8;
+    padding: 0 6px;
+    font-weight: bold;
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 12px;
+}
+QGroupBox#gripperGroup::title,
+QGroupBox#liftingGroup,
+QGroupBox#armEnableGroup::title,
+QGroupBox#armProjectGroup::title {
+    color: #5A6478;
+}
+
+/* ---------- AGV 方向按钮 ---------- */
+QPushButton#btnAgvForward, QPushButton#btnAgvBackward,
+QPushButton#btnAgvLeft, QPushButton#btnAgvRight {
+    background-color: rgba(0, 120, 212, 40);
+    color: #0078D4;
+    border: none;
+    border-radius: 12px;
+    font-size: 24px;
+    font-weight: bold;
+}
+QPushButton#btnAgvForward:hover, QPushButton#btnAgvBackward:hover,
+QPushButton#btnAgvLeft:hover, QPushButton#btnAgvRight:hover {
+    background-color: rgba(0, 120, 212, 80);
+}
+QPushButton#btnAgvForward:pressed, QPushButton#btnAgvBackward:pressed,
+QPushButton#btnAgvLeft:pressed, QPushButton#btnAgvRight:pressed {
+    background-color: #0078D4;
+    color: white;
+}
+QPushButton#btnAgvForward:disabled, QPushButton#btnAgvBackward:disabled,
+QPushButton#btnAgvLeft:disabled, QPushButton#btnAgvRight:disabled {
+    background-color: rgba(220, 228, 238, 120);
+    color: #999999;
+}
+
+QPushButton#btnAgvStop {
+    background-color: rgba(211, 47, 47, 60);
+    color: #C62828;
+    border: none;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: bold;
+}
+QPushButton#btnAgvStop:hover, QPushButton#btnAgvStop:pressed {
+    background-color: #D32F2F;
+    color: white;
+}
+
+/* AGV 状态标签 */
+QLabel#lblAgvSpeedVal {
+    color: #0078D4;
+    font-weight: bold;
+    font-size: 13px;
+}
+QLabel#lblAgvX, QLabel#lblAgvY, QLabel#lblAgvAngle,
+QLabel#lblAgvBattery, QLabel#lblAgvStation, QLabel#lblAgvState {
+    color: #5A6478;
+    font-size: 12px;
+    background: transparent;
+}
+
+/* ---------- 机械臂使能 ---------- */
+QLabel#lblLeftArmTitle, QLabel#lblLeftArmTag {
+    color: #0078D4;
+    font-weight: bold;
+    font-size: 12px;
+    background: transparent;
+}
+QLabel#lblRightArmTitle, QLabel#lblRightArmTag {
+    color: #6A1B9A;
+    font-weight: bold;
+    font-size: 12px;
+    background: transparent;
+}
+QPushButton#btnLeftArmEnable, QPushButton#btnRightArmEnable {
+    background-color: rgba(0, 120, 212, 40);
+    color: #0078D4;
+    border: none;
+    border-radius: 8px;
+    font-weight: bold;
+    font-size: 13px;
+    padding: 6px 16px;
+}
+QPushButton#btnLeftArmEnable:hover, QPushButton#btnRightArmEnable:hover {
+    background-color: rgba(0, 120, 212, 80);
+}
+QPushButton#btnLeftArmEnable:checked, QPushButton#btnRightArmEnable:checked {
+    background-color: #2E7D32;
+    color: white;
+}
+QLabel#lblLeftArmEnabled, QLabel#lblRightArmEnabled {
+    color: #777;
+    font-size: 11px;
+    background: transparent;
+}
+
+/* ---------- 机械臂速度 ---------- */
+QLabel#lblArmSpeedVal {
+    color: #0078D4;
+    font-weight: bold;
+    font-size: 16px;
+}
+QLabel#lblArmSpeedHint {
+    color: #777;
+    font-size: 10px;
+    background: transparent;
+}
+
+/* ---------- 机械臂项目状态 ---------- */
+QLabel#lblArmProjectStatus {
+    color: #5A6478;
+    font-size: 11px;
+    background: transparent;
+}
+
+/* ---------- 升降柱高度大字号 ---------- */
+QLabel#lblLiftHeight {
+    color: #0078D4;
+    font-size: 24pt;
+    font-weight: bold;
+    background: transparent;
+}
+QLabel#lblLiftHeightTitle, QLabel#lblLiftLimits {
+    color: #5A6478;
+    font-size: 10pt;
+    background: transparent;
+}
+QLabel#lblLiftOnline, QLabel#lblLiftEnabled,
+QLabel#lblLiftMoving, QLabel#lblLiftFault {
+    color: #777;
+    font-size: 11px;
+    background: transparent;
+}
+
+/* ---------- 夹爪状态 ---------- */
+QLabel#lblGripperStatus {
+    color: #777;
+    font-size: 11px;
+    background: transparent;
+}
+
+/* ---------- 升降柱告警 ---------- */
+QLabel#lblLiftAlert {
+    color: white;
+    background: transparent;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-weight: bold;
+}
+
+/* ---------- 关节角/末端位姿 (左/右臂标签) ---------- */
+QLabel#lblLeftPoseTag, QLabel#lblRightPoseTag {
+    color: #5A6478;
+    font-size: 11px;
+    background: transparent;
+}
+QLabel[lbl^="lblLeft"], QLabel[lbl^="lblRight"] {
+    color: #1E1E1E;
+    background: transparent;
+}
+
+/* ---------- QSplitter 手柄 ---------- */
+QSplitter#mainSplitter::handle {
+    background-color: transparent;
+}
+QSplitter#mainSplitter::handle:horizontal {
+    width: 10px;
+}
+QSplitter#mainSplitter::handle:horizontal:hover {
+    background-color: rgba(0, 120, 212, 30);
+    border-radius: 5px;
+}
+
+/* ---------- 通用 Slider ---------- */
+QSlider::groove:horizontal {
+    height: 6px;
+    background: #E0E6F0;
+    border-radius: 3px;
+}
+QSlider::handle:horizontal {
+    background: #0078D4;
+    width: 16px;
+    margin: -5px 0;
+    border-radius: 8px;
+}
+QSlider::handle:horizontal:hover {
+    background: #1A88E4;
+}
+QSlider::sub-page:horizontal {
+    background: #0078D4;
+    border-radius: 3px;
+}
+
+/* ---------- 通用 ComboBox ---------- */
+QComboBox {
+    background-color: #FFFFFF;
+    border: 1px solid #D0D6E0;
+    border-radius: 6px;
+    padding: 4px 8px;
+    min-height: 22px;
+}
+QComboBox:hover { border-color: #0078D4; }
+QComboBox::drop-down { border: none; width: 20px; }
+
+/* ---------- 通用 SpinBox / DoubleSpinBox ---------- */
+QSpinBox, QDoubleSpinBox {
+    background-color: #FFFFFF;
+    border: 1px solid #D0D6E0;
+    border-radius: 6px;
+    padding: 4px 6px;
+    min-height: 22px;
+}
+QSpinBox:focus, QDoubleSpinBox:focus { border-color: #0078D4; }

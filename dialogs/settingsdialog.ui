@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>SettingsDialog</class>
+ <widget class="QDialog" name="SettingsDialog">
+  <property name="geometry">
+   <rect><x>0</x><y>0</y><width>480</width><height>420</height></rect>
+  </property>
+  <property name="windowTitle"><string>设置</string></property>
+  <layout class="QVBoxLayout" name="mainLayout">
+   <item>
+    <widget class="QTabWidget" name="tabs">
+     <widget class="QWidget" name="tabNetwork">
+      <attribute name="title"><string>网络</string></attribute>
+      <layout class="QFormLayout" name="netForm">
+       <item row="0" column="0"><widget class="QLabel" name="lblIp"><property name="text"><string>设备 IP:</string></property></widget></item>
+       <item row="0" column="1"><widget class="QLineEdit" name="editIp"/></item>
+       <item row="1" column="0"><widget class="QLabel" name="lblArmPort"><property name="text"><string>机械臂 WS 端口:</string></property></widget></item>
+       <item row="1" column="1"><widget class="QSpinBox" name="spinArmPort">
+        <property name="minimum"><number>1</number></property>
+        <property name="maximum"><number>65535</number></property>
+        <property name="value"><number>9000</number></property>
+       </widget></item>
+       <item row="2" column="0"><widget class="QLabel" name="lblAgvPush"><property name="text"><string>AGV 推送端口:</string></property></widget></item>
+       <item row="2" column="1"><widget class="QSpinBox" name="spinAgvPush">
+        <property name="minimum"><number>1</number></property>
+        <property name="maximum"><number>65535</number></property>
+        <property name="value"><number>19301</number></property>
+       </widget></item>
+       <item row="3" column="0"><widget class="QLabel" name="lblAgvCtrl"><property name="text"><string>AGV 控制端口:</string></property></widget></item>
+       <item row="3" column="1"><widget class="QSpinBox" name="spinAgvCtrl">
+        <property name="minimum"><number>1</number></property>
+        <property name="maximum"><number>65535</number></property>
+        <property name="value"><number>19205</number></property>
+       </widget></item>
+       <item row="4" column="0"><widget class="QLabel" name="lblAgvNav"><property name="text"><string>AGV 导航端口:</string></property></widget></item>
+       <item row="4" column="1"><widget class="QSpinBox" name="spinAgvNav">
+        <property name="minimum"><number>1</number></property>
+        <property name="maximum"><number>65535</number></property>
+        <property name="value"><number>19206</number></property>
+       </widget></item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="tabDevice">
+      <attribute name="title"><string>设备</string></attribute>
+      <layout class="QFormLayout" name="deviceForm">
+       <item row="0" column="0"><widget class="QLabel" name="lblLeftArm"><property name="text"><string>左臂名称:</string></property></widget></item>
+       <item row="0" column="1"><widget class="QLineEdit" name="editLeftArm"/></item>
+       <item row="1" column="0"><widget class="QLabel" name="lblRightArm"><property name="text"><string>右臂名称:</string></property></widget></item>
+       <item row="1" column="1"><widget class="QLineEdit" name="editRightArm"/></item>
+       <item row="2" column="0"><widget class="QLabel" name="lblPushInterval"><property name="text"><string>推送间隔 (ms):</string></property></widget></item>
+       <item row="2" column="1"><widget class="QSpinBox" name="spinPushInterval">
+        <property name="minimum"><number>10</number></property>
+        <property name="maximum"><number>10000</number></property>
+        <property name="value"><number>100</number></property>
+       </widget></item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+   <item>
+    <widget class="QDialogButtonBox" name="btnBox">
+     <property name="orientation"><enum>Qt::Horizontal</enum></property>
+     <property name="standardButtons">
+      <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

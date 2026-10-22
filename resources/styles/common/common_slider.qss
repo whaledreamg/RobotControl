@@ -1,0 +1,64 @@
+/* =====================================================
+ * common_slider.qss - 滑块样式 (浅色)
+ * ===================================================== */
+
+QSlider {
+    background-color: transparent;
+    min-height: 24px;
+}
+
+QSlider::groove:horizontal {
+    background-color: #E0E0E0;
+    border: 1px solid #C0C0C0;
+    height: 6px;
+    border-radius: 3px;
+}
+
+QSlider::sub-page:horizontal {
+    background-color: #0078D4;
+    border: 1px solid #0078D4;
+    height: 6px;
+    border-radius: 3px;
+}
+
+QSlider::handle:horizontal {
+    background-color: #FFFFFF;
+    border: 2px solid #0078D4;
+    width: 16px;
+    height: 16px;
+    margin: -6px 0;
+    border-radius: 8px;
+}
+
+QSlider::handle:horizontal:hover {
+    background-color: #F0F0F0;
+    border-color: #1A88E4;
+}
+
+QSlider::handle:horizontal:pressed {
+    background-color: #0078D4;
+    border-color: #0078D4;
+}
+
+QSlider::groove:vertical {
+    background-color: #E0E0E0;
+    border: 1px solid #C0C0C0;
+    width: 6px;
+    border-radius: 3px;
+}
+
+QSlider::add-page:vertical {
+    background-color: #0078D4;
+    border: 1px solid #0078D4;
+    width: 6px;
+    border-radius: 3px;
+}
+
+QSlider::handle:vertical {
+    background-color: #FFFFFF;
+    border: 2px solid #0078D4;
+    width: 16px;
+    height: 16px;
+    margin: 0 -6px;
+    border-radius: 8px;
+}
