@@ -1,9 +1,21 @@
 #include "webviewdialog.h"
 #include "core/qssmanager.h"
+#include "dialogs/dialogutil.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QUrl>
+#include <QDebug>
+#include <QTimer>
+#include <QShowEvent>
+
+#ifdef Q_OS_ANDROID
+#include <QQuickWidget>
+#include <QQuickItem>
+#include <QMetaObject>
+#else
+#include <QWebEngineView>
+#endif
 
 WebViewDialog::WebViewDialog(const QString &url, const QString &title, QWidget *parent)
     : QDialog(parent)
@@ -18,9 +30,38 @@ WebViewDialog::WebViewDialog(const QString &url, const QString &title, QWidget *
 
     // 加载对话框专用样式
     QssManager::instance()->loadStyleForWidget(this, QStringLiteral("dialogs/webviewdialog"));
+    DialogUtil::adaptForMobile(this);
 
     if (!m_initialUrl.isEmpty()) {
         loadUrl(m_initialUrl);
+    }
+}
+
+void WebViewDialog::showEvent(QShowEvent *event)
+{
+    QDialog::showEvent(event);
+    if (m_shown) return;
+    m_shown = true;
+
+#ifdef Q_OS_ANDROID
+    // Android 的原生 WebView 要等 QQuickWidget 绑定到窗口、设好几何后才可用。
+    // 构造函数里（窗口还没显示）发出的 load 会被丢掉，导致“能打开窗口但不跳转”，
+    // 所以首次显示后再延迟一拍加载。
+    QTimer::singleShot(300, this, [this]() {
+        if (!m_pendingUrl.isEmpty())
+            loadUrl(m_pendingUrl);
+    });
+#endif
+}
+
+void WebViewDialog::onLoadStatus(int status, const QString &url, const QString &error)
+{
+    // 0 开始 / 1 停止 / 2 成功 / 3 失败
+    switch (status) {
+    case 0: m_statusLabel->setText(QStringLiteral("加载中… %1").arg(url)); break;
+    case 2: m_statusLabel->setText(QStringLiteral("已加载 %1").arg(url));  break;
+    case 3: m_statusLabel->setText(QStringLiteral("加载失败：%1（%2）").arg(error, url)); break;
+    default: break;
     }
 }
 
@@ -75,11 +116,34 @@ void WebViewDialog::setupUi()
 
     mainLayout->addLayout(toolbar);
 
-    // --- WebEngineView 内容区 ---
+    // --- 网页内容区 ---
+#ifdef Q_OS_ANDROID
+    m_view = new QQuickWidget(this);
+    m_view->setResizeMode(QQuickWidget::SizeRootObjectToView);
+    m_view->setSource(QUrl(QStringLiteral("qrc:/resources/qml/WebViewPage.qml")));
+    if (m_view->status() == QQuickWidget::Error) {
+        qWarning() << "WebViewPage.qml 加载失败:" << m_view->errors();
+    } else if (QQuickItem *root = m_view->rootObject()) {
+        connect(root, SIGNAL(urlUpdated(QString)),   this, SLOT(onViewUrlChanged(QString)));
+        connect(root, SIGNAL(titleUpdated(QString)), this, SLOT(onViewTitleChanged(QString)));
+        connect(root, SIGNAL(loadStatus(int,QString,QString)),
+                this, SLOT(onLoadStatus(int,QString,QString)));
+    }
+#else
     m_view = new QWebEngineView(this);
-    connect(m_view, &QWebEngineView::urlChanged, this, &WebViewDialog::onViewUrlChanged);
+    connect(m_view, &QWebEngineView::urlChanged, this,
+            [this](const QUrl &u) { onViewUrlChanged(u.toString()); });
     connect(m_view, &QWebEngineView::titleChanged, this, &WebViewDialog::onViewTitleChanged);
+#endif
     mainLayout->addWidget(m_view, 1);
+
+    // 状态栏：显示加载进度/失败原因（Android 无法看 logcat 时用于排查）
+    m_statusLabel = new QLabel(this);
+    m_statusLabel->setWordWrap(true);
+    mainLayout->addWidget(m_statusLabel);
+#ifndef Q_OS_ANDROID
+    m_statusLabel->hide();
+#endif
 }
 
 void WebViewDialog::loadUrl(const QString &url)
@@ -91,7 +155,17 @@ void WebViewDialog::loadUrl(const QString &url)
         u = QStringLiteral("http://") + u;
     }
     m_urlEdit->setText(u);
+#ifdef Q_OS_ANDROID
+    m_pendingUrl = u;
+    // 窗口还没显示时先记下，showEvent 之后再加载
+    if (!m_shown) return;
+    if (QQuickItem *root = m_view->rootObject())
+        QMetaObject::invokeMethod(root, "load", Q_ARG(QVariant, QVariant(QUrl(u))));
+    else
+        m_statusLabel->setText(QStringLiteral("WebView 未初始化（QML 加载失败）"));
+#else
     m_view->setUrl(QUrl(u));
+#endif
 }
 
 void WebViewDialog::onUrlEdited()
@@ -101,22 +175,37 @@ void WebViewDialog::onUrlEdited()
 
 void WebViewDialog::onBack()
 {
+#ifdef Q_OS_ANDROID
+    if (m_view && m_view->rootObject())
+        QMetaObject::invokeMethod(m_view->rootObject(), "goBack");
+#else
     if (m_view) m_view->back();
+#endif
 }
 
 void WebViewDialog::onForward()
 {
+#ifdef Q_OS_ANDROID
+    if (m_view && m_view->rootObject())
+        QMetaObject::invokeMethod(m_view->rootObject(), "goForward");
+#else
     if (m_view) m_view->forward();
+#endif
 }
 
 void WebViewDialog::onReload()
 {
+#ifdef Q_OS_ANDROID
+    if (m_view && m_view->rootObject())
+        QMetaObject::invokeMethod(m_view->rootObject(), "reload");
+#else
     if (m_view) m_view->reload();
+#endif
 }
 
-void WebViewDialog::onViewUrlChanged(const QUrl &url)
+void WebViewDialog::onViewUrlChanged(const QString &url)
 {
-    m_urlEdit->setText(url.toString());
+    m_urlEdit->setText(url);
 }
 
 void WebViewDialog::onViewTitleChanged(const QString &title)

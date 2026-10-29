@@ -2,6 +2,7 @@
 #include "ui_settingsdialog.h"
 #include "../core/settingsmanager.h"
 #include "../core/qssmanager.h"
+#include "dialogutil.h"
 
 SettingsDialog::SettingsDialog(QWidget *parent)
     : QDialog(parent)
@@ -10,6 +11,7 @@ SettingsDialog::SettingsDialog(QWidget *parent)
     ui->setupUi(this);
     QssManager::instance()->loadStyleForWidget(this, QStringLiteral("dialogs/settingsdialog"));
     loadFromSettings();
+    DialogUtil::adaptForMobile(this);
 
     connect(ui->btnBox, &QDialogButtonBox::accepted, this, &SettingsDialog::onAccepted);
     connect(ui->btnBox, &QDialogButtonBox::rejected, this, &SettingsDialog::onRejected);

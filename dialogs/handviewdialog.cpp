@@ -1,5 +1,6 @@
 #include "dialogs/handviewdialog.h"
 #include "communication/revo2hand.h"
+#include "dialogs/dialogutil.h"
 
 #include <QAbstractSlider>
 #include <QApplication>
@@ -1020,6 +1021,7 @@ HandViewDialog::HandViewDialog(const QString &side,
                        .arg(sideCn(side)));
     resize(900, 620);
     buildUi();
+    DialogUtil::adaptForMobile(this);
 }
 
 HandViewDialog::~HandViewDialog() = default;
@@ -1050,7 +1052,8 @@ void HandViewDialog::buildUi()
     btnRow->addStretch(1);
     QPushButton *btnClose = new QPushButton(QStringLiteral("关闭"));
     btnClose->setCursor(Qt::PointingHandCursor);
-    connect(btnClose, &QPushButton::clicked, this, &QDialog::accept);
+    // 通过 show() 显示且设置了 WA_DeleteOnClose，用 close() 才能真正关闭并释放
+    connect(btnClose, &QPushButton::clicked, this, &QWidget::close);
     btnRow->addWidget(btnClose);
     layout->addLayout(btnRow);
 }

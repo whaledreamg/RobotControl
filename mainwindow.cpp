@@ -16,7 +16,7 @@
 // QtWebEngineWidgets 仅在桌面平台可用。Android 上该模块不存在，
 // 因此 webviewdialog 系列源文件被排除（见 dialogs/dialogs.pri），
 // 这里也相应条件包含头文件。
-#if !defined(Q_OS_ANDROID) && !defined(Q_OS_IOS) && !defined(Q_OS_WASM)
+#if !defined(Q_OS_IOS) && !defined(Q_OS_WASM)
 #include "dialogs/webviewdialog.h"
 #endif
 
@@ -758,8 +758,8 @@ void MainWindow::onArmRefreshClicked()
 void MainWindow::onArmViewClicked()
 {
     // 机械臂 Web 界面 URL
-    // WebViewDialog 依赖 QtWebEngineWidgets，在 Android / iOS / WASM 平台不可用。
-#if !defined(Q_OS_ANDROID) && !defined(Q_OS_IOS) && !defined(Q_OS_WASM)
+    // 桌面用 QtWebEngine，Android 用 Qt WebView；iOS / WASM 未适配。
+#if !defined(Q_OS_IOS) && !defined(Q_OS_WASM)
     static WebViewDialog *dlg = nullptr;
     if (!dlg) {
         dlg = new WebViewDialog(QStringLiteral("http://192.168.100.16:9198/"),
