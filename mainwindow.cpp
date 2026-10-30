@@ -762,8 +762,11 @@ void MainWindow::onArmViewClicked()
 #if !defined(Q_OS_IOS) && !defined(Q_OS_WASM)
     static WebViewDialog *dlg = nullptr;
     if (!dlg) {
-        dlg = new WebViewDialog(QStringLiteral("http://192.168.100.16:9198/"),
-                                QStringLiteral("机械臂 Web"), this);
+        dlg = new WebViewDialog(url, QStringLiteral("机械臂 Web"), this);
+        loadedUrl = url;
+    } else if (url != loadedUrl) {
+        dlg->loadUrl(url);
+        loadedUrl = url;
     }
     dlg->show();
     dlg->raise();
@@ -933,7 +936,10 @@ void MainWindow::onHandStopAllRequested()
     const QVector<int> zeros(HAND_DOF_COUNT, 0);
     QString e1 = m_handManager->left()->writeAll(zeros);
     QString e2 = m_handManager->right()->writeAll(zeros);
+    // 地址来自设置页（默认 DEFAULT_ARM_WEB_URL）；设置被修改后再次打开时重新加载
     if (m_messageManager) {
+    static QString loadedUrl;
+    const QString url = SettingsManager::instance()->armWebUrl();
         if (e1.isEmpty() && e2.isEmpty())
             m_messageManager->success(QStringLiteral("灵巧手已急停"));
         else

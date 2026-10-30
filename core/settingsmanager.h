@@ -33,6 +33,10 @@ public:
     QString agvIp() const;
     void setAgvIp(const QString &ip);
 
+    /// 机械臂 Web 界面地址（“机械臂 Web”弹窗打开的页面）；为空时返回默认值
+    QString armWebUrl() const;
+    void setArmWebUrl(const QString &url);
+
     quint16 armWsPort() const;
     void setArmWsPort(quint16 port);
 

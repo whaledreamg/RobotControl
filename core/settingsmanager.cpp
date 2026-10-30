@@ -3,6 +3,7 @@
 namespace {
 constexpr const char* K_ARM_IP            = "network/armIp";
 constexpr const char* K_AGV_IP            = "network/agvIp";
+constexpr const char* K_ARM_WEB_URL       = "network/armWebUrl";
 constexpr const char* K_ARM_WS_PORT       = "network/armWsPort";
 constexpr const char* K_AGV_PUSH_PORT     = "network/agvPushPort";
 constexpr const char* K_AGV_CTRL_PORT     = "network/agvCtrlPort";
@@ -67,6 +68,17 @@ QString SettingsManager::agvIp() const
 void SettingsManager::setAgvIp(const QString &ip)
 {
     m_settings.setValue(K_AGV_IP, ip);
+}
+
+QString SettingsManager::armWebUrl() const
+{
+    const QString url = m_settings.value(K_ARM_WEB_URL).toString().trimmed();
+    return url.isEmpty() ? QString::fromLatin1(Common::DEFAULT_ARM_WEB_URL) : url;
+}
+
+void SettingsManager::setArmWebUrl(const QString &url)
+{
+    m_settings.setValue(K_ARM_WEB_URL, url.trimmed());
 }
 
 quint16 SettingsManager::armWsPort() const
@@ -279,6 +291,7 @@ void SettingsManager::resetToDefault()
 {
     m_settings.setValue(K_ARM_IP,          QString::fromLatin1(Common::DEFAULT_ARM_IP));
     m_settings.setValue(K_AGV_IP,          QString::fromLatin1(Common::DEFAULT_AGV_IP));
+    m_settings.setValue(K_ARM_WEB_URL,     QString::fromLatin1(Common::DEFAULT_ARM_WEB_URL));
     m_settings.setValue(K_ARM_WS_PORT,     Common::DEFAULT_ARM_WS_PORT);
     m_settings.setValue(K_AGV_PUSH_PORT,   Common::DEFAULT_AGV_PUSH_PORT);
     m_settings.setValue(K_AGV_CTRL_PORT,   Common::DEFAULT_AGV_CTRL_PORT);

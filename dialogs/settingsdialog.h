@@ -4,6 +4,7 @@
 #include <QDialog>
 
 namespace Ui { class SettingsDialog; }
+class BusinessTestPanel;
 
 /**
  * @brief 设置对话框 (网络 / 设备)
@@ -24,9 +25,12 @@ public:
 private slots:
     void onAccepted();
     void onRejected();
+    void onTabChanged(int index);
 
 private:
     Ui::SettingsDialog *ui;
+    BusinessTestPanel *m_testPanel = nullptr;   // iOS / WASM 上为空
+    int m_testTabIndex = -1;
 };
 
 #endif // DIALOGS_SETTINGSDIALOG_H

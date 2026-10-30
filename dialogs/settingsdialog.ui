@@ -38,6 +38,10 @@
         <property name="maximum"><number>65535</number></property>
         <property name="value"><number>19206</number></property>
        </widget></item>
+       <item row="5" column="0"><widget class="QLabel" name="lblArmWebUrl"><property name="text"><string>机械臂 Web 地址:</string></property></widget></item>
+       <item row="5" column="1"><widget class="QLineEdit" name="editArmWebUrl">
+        <property name="placeholderText"><string>http://192.168.100.16:9198/cocontrol/robotviewmultiarm</string></property>
+       </widget></item>
       </layout>
      </widget>
      <widget class="QWidget" name="tabDevice">

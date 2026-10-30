@@ -40,6 +40,9 @@ private slots:
 
 private:
     void setupUi();
+#ifdef Q_OS_ANDROID
+    void initQuickView();
+#endif
 
 #ifdef Q_OS_ANDROID
     QQuickWidget   *m_view = nullptr;

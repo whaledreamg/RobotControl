@@ -22,7 +22,9 @@ SOURCES += \
 #   Android  -> Qt WebView（QML WebView，经 QQuickWidget 内嵌，见 RobotControl.pro）
 # iOS / WASM 暂未适配，不参与构建。
 !ios:!wasm: HEADERS += \
-    $$PWD/webviewdialog.h
+    $$PWD/webviewdialog.h \
+    $$PWD/businesstestpanel.h
 
 !ios:!wasm: SOURCES += \
-    $$PWD/webviewdialog.cpp
+    $$PWD/webviewdialog.cpp \
+    $$PWD/businesstestpanel.cpp

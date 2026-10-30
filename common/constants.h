@@ -9,6 +9,7 @@ namespace Common {
 inline constexpr const char* DEFAULT_IP              = "192.168.100.16";
 inline constexpr const char* DEFAULT_ARM_IP          = "192.168.100.16";
 inline constexpr const char* DEFAULT_AGV_IP          = "192.168.100.101";
+inline constexpr const char* DEFAULT_ARM_WEB_URL      = "http://192.168.100.16:9198/cocontrol/robotviewmultiarm";
 inline constexpr quint16        DEFAULT_ARM_WS_PORT   = 9000;
 inline constexpr quint16        DEFAULT_AGV_PUSH_PORT = 19301;
 inline constexpr quint16        DEFAULT_AGV_CTRL_PORT = 19205;

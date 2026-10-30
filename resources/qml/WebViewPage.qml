@@ -1,10 +1,13 @@
 import QtQuick
 import QtWebView
 
-// Android 上 WebViewDialog 通过 QQuickWidget 加载本页面。
+// Android 上 WebViewDialog / BusinessTestPanel 通过 QQuickWidget 加载本页面。
 // Qt 6 的 Qt WebView 只提供 QML 类型，没有 C++ 的 QWebView 控件。
 Item {
     id: root
+
+    // 是否允许页面读取本地文件（加载 file:// 页面时需要，默认关闭）
+    property bool allowLocalFiles: false
 
     signal urlUpdated(string url)
     signal titleUpdated(string title)
@@ -16,6 +19,8 @@ Item {
     function goBack()    { web.goBack() }
     function goForward() { web.goForward() }
     function reload()    { web.reload() }
+
+    onAllowLocalFilesChanged: web.settings.allowFileAccess = root.allowLocalFiles
 
     WebView {
         id: web

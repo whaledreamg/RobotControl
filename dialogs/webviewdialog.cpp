@@ -44,15 +44,36 @@ void WebViewDialog::showEvent(QShowEvent *event)
     m_shown = true;
 
 #ifdef Q_OS_ANDROID
-    // Android 的原生 WebView 要等 QQuickWidget 绑定到窗口、设好几何后才可用。
-    // 构造函数里（窗口还没显示）发出的 load 会被丢掉，导致“能打开窗口但不跳转”，
-    // 所以首次显示后再延迟一拍加载。
+    initQuickView();
+    // 原生 WebView 还要等布局、几何都稳定后才可用，延迟一拍再加载地址
     QTimer::singleShot(300, this, [this]() {
         if (!m_pendingUrl.isEmpty())
             loadUrl(m_pendingUrl);
     });
 #endif
 }
+
+#ifdef Q_OS_ANDROID
+void WebViewDialog::initQuickView()
+{
+    // showEvent 时对话框的原生窗口已创建，Qt WebView 才能挂到正确的父窗口上
+    if (!windowHandle())
+        qWarning() << "WebViewDialog: windowHandle() 为空，WebView 可能无法显示";
+
+    m_view->setSource(QUrl(QStringLiteral("qrc:/resources/qml/WebViewPage.qml")));
+    if (m_view->status() == QQuickWidget::Error) {
+        qWarning() << "WebViewPage.qml 加载失败:" << m_view->errors();
+        m_statusLabel->setText(QStringLiteral("WebView 未初始化（QML 加载失败）"));
+        return;
+    }
+    if (QQuickItem *root = m_view->rootObject()) {
+        connect(root, SIGNAL(urlUpdated(QString)),   this, SLOT(onViewUrlChanged(QString)));
+        connect(root, SIGNAL(titleUpdated(QString)), this, SLOT(onViewTitleChanged(QString)));
+        connect(root, SIGNAL(loadStatus(int,QString,QString)),
+                this, SLOT(onLoadStatus(int,QString,QString)));
+    }
+}
+#endif
 
 void WebViewDialog::onLoadStatus(int status, const QString &url, const QString &error)
 {
@@ -97,7 +118,7 @@ void WebViewDialog::setupUi()
     toolbar->addWidget(m_btnReload);
 
     m_urlEdit = new QLineEdit(this);
-    m_urlEdit->setPlaceholderText(QStringLiteral("输入 URL，例如 http://192.168.100.16:9198/"));
+    m_urlEdit->setPlaceholderText(QStringLiteral("输入 URL，例如 http://192.168.100.16:9198/cocontrol/robotviewmultiarm"));
     m_urlEdit->setMinimumHeight(30);
     connect(m_urlEdit, &QLineEdit::returnPressed, this, &WebViewDialog::onUrlEdited);
     toolbar->addWidget(m_urlEdit, 1);
@@ -118,17 +139,14 @@ void WebViewDialog::setupUi()
 
     // --- 网页内容区 ---
 #ifdef Q_OS_ANDROID
+    // 这里只创建 QQuickWidget，不加载 QML。
+    // Qt WebView 在 QML 加载完成时会通过 QQuickRenderControl::renderWindowFor()
+    // 取对话框的原生窗口（windowHandle()）作为父窗口。构造函数阶段对话框还没有
+    // 原生窗口，windowHandle() 为空，WebView 会被挂到永远不显示的离屏窗口上：
+    // 页面能加载成功（状态栏显示“已加载”），但画面不会出现在对话框里。
+    // 因此 QML 推迟到 showEvent（原生窗口已创建）之后再加载，见 initQuickView()。
     m_view = new QQuickWidget(this);
     m_view->setResizeMode(QQuickWidget::SizeRootObjectToView);
-    m_view->setSource(QUrl(QStringLiteral("qrc:/resources/qml/WebViewPage.qml")));
-    if (m_view->status() == QQuickWidget::Error) {
-        qWarning() << "WebViewPage.qml 加载失败:" << m_view->errors();
-    } else if (QQuickItem *root = m_view->rootObject()) {
-        connect(root, SIGNAL(urlUpdated(QString)),   this, SLOT(onViewUrlChanged(QString)));
-        connect(root, SIGNAL(titleUpdated(QString)), this, SLOT(onViewTitleChanged(QString)));
-        connect(root, SIGNAL(loadStatus(int,QString,QString)),
-                this, SLOT(onLoadStatus(int,QString,QString)));
-    }
 #else
     m_view = new QWebEngineView(this);
     connect(m_view, &QWebEngineView::urlChanged, this,

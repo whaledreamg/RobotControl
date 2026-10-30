@@ -24,5 +24,9 @@
 
         <!-- Android 内嵌网页（Qt WebView，QML） -->
         <file alias="qml/WebViewPage.qml">qml/WebViewPage.qml</file>
+
+        <!-- 设置页「业务调试」标签内嵌的页面（运行时释放到 AppDataLocation/web 后加载） -->
+        <file alias="web/business-test.html">../business-test.html</file>
+        <file alias="web/business-friction.js">../business-friction.js</file>
     </qresource>
 </RCC>
