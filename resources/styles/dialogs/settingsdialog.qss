@@ -1,41 +1,148 @@
 /* =====================================================
- * dialogs/settingsdialog.qss - 设置对话框样式 (浅色)
+ * dialogs/settingsdialog.qss - 设置对话框样式 (果冻风)
+ * 与主窗口 / 地图弹窗一致：淡冷蓝背景 + 半透明白色卡片
+ * 按钮通过动态属性 role 区分：primary / close
  * ===================================================== */
 
-QDialog {
-    background-color: #FFFFFF;
+SettingsDialog {
+    background-color: #F2F4F8;
 }
 
-QTabWidget::pane {
-    border: 1px solid #D0D0D0;
-    background-color: #FFFFFF;
-    border-radius: 4px;
+/* ---------- 标签页 ---------- */
+SettingsDialog QTabWidget::pane {
+    background-color: rgba(255, 255, 255, 230);
+    border: 1px solid rgba(200, 210, 230, 180);
+    border-radius: 12px;
+    top: -1px;
 }
 
-QTabBar::tab {
-    background-color: #F0F0F0;
-    color: #555555;
-    padding: 8px 20px;
-    border: 1px solid #D0D0D0;
-    border-bottom: none;
-    border-top-left-radius: 4px;
-    border-top-right-radius: 4px;
+SettingsDialog QTabBar {
+    background: transparent;
 }
 
-QTabBar::tab:selected {
-    background-color: #FFFFFF;
+SettingsDialog QTabBar::tab {
+    background: transparent;
+    color: #5A6478;
+    padding: 8px 22px;
+    margin-right: 4px;
+    border: none;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+}
+
+SettingsDialog QTabBar::tab:hover:!selected {
+    background-color: rgba(74, 144, 226, 30);
+    color: #357ABD;
+}
+
+SettingsDialog QTabBar::tab:selected {
+    background-color: rgba(255, 255, 255, 230);
     color: #0078D4;
+    font-weight: bold;
     border-bottom: 2px solid #0078D4;
 }
 
-QFormLayout QLabel {
-    color: #333333;
+/* 标签页内容透明，露出 pane 的圆角卡片底色 */
+SettingsDialog QWidget#tabNetwork,
+SettingsDialog QWidget#tabDevice {
+    background: transparent;
 }
 
-QDialogButtonBox {
-    background-color: transparent;
+/* ---------- 表单 ---------- */
+SettingsDialog QLabel {
+    color: #5A6478;
+    background: transparent;
 }
 
-QPushButton {
+SettingsDialog QLineEdit,
+SettingsDialog QSpinBox {
+    background-color: #FFFFFF;
+    border: 1px solid #D0D6E0;
+    border-radius: 6px;
+    padding: 4px 8px;
+    min-height: 24px;
+    selection-background-color: #4A90E2;
+}
+
+SettingsDialog QLineEdit:hover,
+SettingsDialog QSpinBox:hover {
+    border-color: rgba(74, 144, 226, 160);
+}
+
+SettingsDialog QLineEdit:focus,
+SettingsDialog QSpinBox:focus {
+    border-color: #0078D4;
+}
+
+SettingsDialog QLineEdit:disabled,
+SettingsDialog QSpinBox:disabled {
+    background-color: rgba(220, 228, 238, 120);
+    color: #8A99AD;
+    border-color: rgba(140, 160, 190, 40);
+}
+
+/* ---------- 底部按钮 ---------- */
+SettingsDialog QDialogButtonBox {
+    background: transparent;
+}
+
+SettingsDialog QPushButton {
+    background-color: rgba(255, 255, 255, 230);
+    color: #2C3E50;
+    border: 1px solid rgba(140, 160, 190, 80);
+    border-radius: 8px;
+    padding: 6px 16px;
     min-width: 80px;
+    min-height: 26px;
+}
+
+SettingsDialog QPushButton:hover {
+    background-color: #EAF0F7;
+    border: 1px solid rgba(74, 144, 226, 120);
+    color: #2C3E50;
+}
+
+SettingsDialog QPushButton:pressed {
+    background-color: rgba(74, 144, 226, 30);
+    color: #357ABD;
+}
+
+SettingsDialog QPushButton:disabled {
+    background-color: rgba(220, 228, 238, 120);
+    color: #8A99AD;
+    border: 1px solid rgba(140, 160, 190, 40);
+}
+
+SettingsDialog QPushButton[role="primary"] {
+    background-color: rgba(74, 144, 226, 90);
+    color: #357ABD;
+    border: 1px solid rgba(74, 144, 226, 180);
+    font-weight: bold;
+}
+
+SettingsDialog QPushButton[role="primary"]:hover {
+    background-color: #4A90E2;
+    color: #FFFFFF;
+}
+
+SettingsDialog QPushButton[role="primary"]:pressed {
+    background-color: #357ABD;
+    color: #FFFFFF;
+}
+
+SettingsDialog QPushButton[role="close"] {
+    background-color: rgba(140, 160, 190, 30);
+    color: #5A6A7E;
+}
+
+SettingsDialog QPushButton[role="close"]:hover {
+    background-color: rgba(140, 160, 190, 60);
+    color: #2C3E50;
+}
+
+SettingsDialog QToolTip {
+    background-color: #2C3E50;
+    color: #FFFFFF;
+    border: none;
+    padding: 4px 8px;
 }

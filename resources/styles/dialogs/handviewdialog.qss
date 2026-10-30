@@ -1,0 +1,322 @@
+/* =====================================================
+ * dialogs/handviewdialog.qss - Revo2 灵巧手 View 弹窗样式 (果冻风)
+ * 作用于 HandViewDialog 及其 5 个标签页
+ *   - 文字层级：dialogTitle / hint / mono（等宽数值）
+ *   - 按钮：动态属性 role = primary | success | secondary | danger | close
+ * ===================================================== */
+
+HandViewDialog {
+    background-color: #F2F4F8;
+}
+
+HandViewDialog QLabel {
+    color: #2C3E50;
+    background: transparent;
+}
+
+HandViewDialog QLabel#dialogTitle {
+    color: #1E1E1E;
+    font-weight: bold;
+    font-size: 14px;
+}
+
+HandViewDialog QLabel[role="hint"] {
+    color: #8A99AD;
+    font-size: 11px;
+}
+
+HandViewDialog QLabel[role="tag"] {
+    color: #8A99AD;
+    font-size: 9px;
+}
+
+HandViewDialog QLabel[role="cardTitle"] {
+    color: #2C3E50;
+    font-size: 11px;
+    font-weight: bold;
+}
+
+HandViewDialog QLabel[role="mono"] {
+    color: #5A6A7E;
+    font-size: 11px;
+    font-family: "Consolas", "DejaVu Sans Mono", monospace;
+}
+
+/* ---------- 标签页 ---------- */
+HandViewDialog QTabWidget::pane {
+    background-color: rgba(255, 255, 255, 230);
+    border: 1px solid rgba(200, 210, 230, 180);
+    border-radius: 12px;
+    top: -1px;
+}
+
+HandViewDialog QTabBar {
+    background: transparent;
+}
+
+HandViewDialog QTabBar::tab {
+    background: transparent;
+    color: #5A6478;
+    padding: 8px 16px;
+    margin-right: 4px;
+    border: none;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+}
+
+HandViewDialog QTabBar::tab:hover:!selected {
+    background-color: rgba(74, 144, 226, 30);
+    color: #357ABD;
+}
+
+HandViewDialog QTabBar::tab:selected {
+    background-color: rgba(255, 255, 255, 230);
+    color: #0078D4;
+    font-weight: bold;
+    border-bottom: 2px solid #0078D4;
+}
+
+HandViewDialog QTabWidget > QWidget > QWidget {
+    background: transparent;
+}
+
+/* ---------- 6 自由度卡片 ---------- */
+HandViewDialog QFrame#microCard {
+    background-color: rgba(242, 244, 248, 200);
+    border: 1px solid rgba(200, 210, 230, 200);
+    border-radius: 10px;
+}
+
+HandViewDialog QFrame#microCard QLabel {
+    background: transparent;
+}
+
+/* ---------- 分组框 ---------- */
+HandViewDialog QGroupBox {
+    background-color: rgba(255, 255, 255, 200);
+    border: 1px solid rgba(140, 160, 190, 80);
+    border-radius: 8px;
+    margin-top: 12px;
+    padding: 14px 10px 8px 10px;
+    font-weight: normal;
+}
+
+HandViewDialog QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 12px;
+    padding: 0 6px;
+    color: #0078D4;
+    font-weight: bold;
+    background-color: transparent;
+}
+
+/* ---------- 输入控件 ---------- */
+HandViewDialog QLineEdit,
+HandViewDialog QSpinBox,
+HandViewDialog QDoubleSpinBox,
+HandViewDialog QComboBox {
+    background-color: #FFFFFF;
+    border: 1px solid #D0D6E0;
+    border-radius: 6px;
+    padding: 3px 8px;
+    min-height: 22px;
+    selection-background-color: #4A90E2;
+}
+
+HandViewDialog QLineEdit:hover,
+HandViewDialog QSpinBox:hover,
+HandViewDialog QDoubleSpinBox:hover,
+HandViewDialog QComboBox:hover {
+    border-color: rgba(74, 144, 226, 160);
+}
+
+HandViewDialog QLineEdit:focus,
+HandViewDialog QSpinBox:focus,
+HandViewDialog QDoubleSpinBox:focus,
+HandViewDialog QComboBox:focus {
+    border-color: #0078D4;
+}
+
+HandViewDialog QSpinBox:read-only {
+    background-color: rgba(220, 228, 238, 120);
+    color: #5A6A7E;
+}
+
+/* 卡片内的 DoubleSpinBox 空间紧凑 */
+HandViewDialog QFrame#microCard QDoubleSpinBox {
+    padding: 1px 4px;
+    min-height: 18px;
+}
+
+HandViewDialog QComboBox::drop-down {
+    border: none;
+    width: 20px;
+}
+
+HandViewDialog QComboBox QAbstractItemView {
+    background-color: #FFFFFF;
+    border: 1px solid #D0D6E0;
+    selection-background-color: rgba(74, 144, 226, 90);
+    selection-color: #357ABD;
+    outline: 0;
+}
+
+HandViewDialog QCheckBox {
+    color: #5A6478;
+    background: transparent;
+    spacing: 6px;
+}
+
+/* ---------- 滑块：发送条（可拖）与当前条（只读）区分 ---------- */
+HandViewDialog QSlider {
+    background: transparent;
+    min-height: 18px;
+}
+
+HandViewDialog QSlider::groove:horizontal {
+    background: rgba(140, 160, 190, 60);
+    height: 6px;
+    border-radius: 3px;
+    border: none;
+}
+
+HandViewDialog QSlider::sub-page:horizontal {
+    background: #4A90E2;
+    height: 6px;
+    border-radius: 3px;
+    border: none;
+}
+
+HandViewDialog QSlider::handle:horizontal {
+    background: #4A90E2;
+    width: 16px;
+    height: 16px;
+    margin: -6px 0;
+    border-radius: 8px;
+    border: 2px solid #FFFFFF;
+}
+
+HandViewDialog QSlider::handle:horizontal:hover {
+    background: #357ABD;
+}
+
+/* 当前位置只读条：薄荷绿，手柄缩小 */
+HandViewDialog QSlider#curSlider::sub-page:horizontal {
+    background: #5EC99F;
+}
+
+HandViewDialog QSlider#curSlider::handle:horizontal {
+    background: #5EC99F;
+    width: 10px;
+    height: 10px;
+    margin: -3px 0;
+    border-radius: 5px;
+    border: 2px solid #FFFFFF;
+}
+
+/* ---------- 表格 / 日志 ---------- */
+HandViewDialog QTableWidget,
+HandViewDialog QTextEdit {
+    background-color: #FFFFFF;
+    border: 1px solid #D0D6E0;
+    border-radius: 8px;
+    gridline-color: rgba(200, 210, 230, 160);
+    selection-background-color: rgba(74, 144, 226, 90);
+    selection-color: #2C3E50;
+}
+
+HandViewDialog QTextEdit {
+    font-family: "Consolas", "DejaVu Sans Mono", monospace;
+    padding: 4px;
+}
+
+HandViewDialog QHeaderView::section {
+    background-color: rgba(242, 244, 248, 230);
+    color: #5A6478;
+    border: none;
+    border-bottom: 1px solid rgba(200, 210, 230, 200);
+    padding: 4px 6px;
+    font-weight: bold;
+}
+
+/* ---------- 按钮 ---------- */
+HandViewDialog QPushButton {
+    background-color: rgba(255, 255, 255, 230);
+    color: #2C3E50;
+    border: 1px solid rgba(140, 160, 190, 80);
+    border-radius: 8px;
+    padding: 6px 16px;
+    min-height: 26px;
+}
+
+HandViewDialog QPushButton:hover {
+    background-color: #EAF0F7;
+    border: 1px solid rgba(74, 144, 226, 120);
+    color: #2C3E50;
+}
+
+HandViewDialog QPushButton:pressed {
+    background-color: rgba(74, 144, 226, 30);
+    color: #357ABD;
+}
+
+HandViewDialog QPushButton:disabled {
+    background-color: rgba(220, 228, 238, 120);
+    color: #8A99AD;
+    border: 1px solid rgba(140, 160, 190, 40);
+}
+
+HandViewDialog QPushButton[role="primary"] {
+    background-color: rgba(74, 144, 226, 90);
+    color: #357ABD;
+    border: 1px solid rgba(74, 144, 226, 180);
+    font-weight: bold;
+}
+HandViewDialog QPushButton[role="primary"]:hover   { background-color: #4A90E2; color: #FFFFFF; }
+HandViewDialog QPushButton[role="primary"]:pressed { background-color: #357ABD; color: #FFFFFF; }
+
+HandViewDialog QPushButton[role="success"] {
+    background-color: rgba(94, 201, 159, 90);
+    color: #3FA37A;
+    border: 1px solid rgba(94, 201, 159, 180);
+    font-weight: bold;
+}
+HandViewDialog QPushButton[role="success"]:hover   { background-color: #5EC99F; color: #FFFFFF; }
+HandViewDialog QPushButton[role="success"]:pressed { background-color: #3FA37A; color: #FFFFFF; }
+
+HandViewDialog QPushButton[role="secondary"] {
+    background-color: rgba(167, 139, 207, 90);
+    color: #8466B3;
+    border: 1px solid rgba(167, 139, 207, 180);
+}
+HandViewDialog QPushButton[role="secondary"]:hover   { background-color: #A78BCF; color: #FFFFFF; }
+HandViewDialog QPushButton[role="secondary"]:pressed { background-color: #8466B3; color: #FFFFFF; }
+
+HandViewDialog QPushButton[role="danger"] {
+    background-color: rgba(239, 111, 108, 90);
+    color: #C44A47;
+    border: 1px solid rgba(239, 111, 108, 180);
+}
+HandViewDialog QPushButton[role="danger"]:hover   { background-color: #EF6F6C; color: #FFFFFF; }
+HandViewDialog QPushButton[role="danger"]:pressed { background-color: #C44A47; color: #FFFFFF; }
+
+HandViewDialog QPushButton[role="close"] {
+    background-color: rgba(140, 160, 190, 30);
+    color: #5A6A7E;
+}
+HandViewDialog QPushButton[role="close"]:hover { background-color: rgba(140, 160, 190, 60); color: #2C3E50; }
+
+/* 预设手势列表里的大按钮 */
+HandViewDialog QPushButton[role="preset"] {
+    text-align: left;
+    padding-left: 18px;
+    font-weight: bold;
+}
+
+HandViewDialog QToolTip {
+    background-color: #2C3E50;
+    color: #FFFFFF;
+    border: none;
+    padding: 4px 8px;
+}

@@ -30,6 +30,7 @@
 #include <QSpinBox>
 #include <QDoubleSpinBox>
 #include <QLineEdit>
+#include <QStyle>
 #include <QTimer>
 #include <QDateTime>
 #include <QVariantList>
@@ -355,6 +356,14 @@ void MainWindow::onUpdateClock()
 void MainWindow::onAgvState(const AgvState &state) {
     updateAgvStateUi(state);
 
+    // 软急停按钮以 AGV 推送的 soft_emc 为准（物理急停按钮 emergency 不在此处理），
+    // 仅在上报值变化时同步：其他控制端触发/解除软急停时按钮跟着变；
+    // 上报值不变时不覆盖本地刚做的操作结果
+    if (state.softEmergency != m_agvReportedSoftEmc) {
+        m_agvReportedSoftEmc = state.softEmergency;
+        setAgvEmergencyUi(state.softEmergency);
+    }
+
     // 推送到地图弹窗
     if (m_mapDialog && m_mapDialog->isVisible()) {
         m_mapDialog->updateAgvPose(state.x, state.y, qRadiansToDegrees(state.theta));
@@ -446,9 +455,31 @@ void MainWindow::onAgvStopClicked()
 }
 void MainWindow::onAgvEmergencyClicked()
 {
-    if (m_agvClient) m_agvClient->softEmergencyStop();
-    statusBar()->showMessage(QStringLiteral("⛔ 急停已触发"), 3000);
-    updateNavButtons(QStringLiteral("idle"));
+    if (!m_agvClient) return;
+    if (m_agvEmergency) {
+        // 当前处于急停 -> 解除
+        m_agvClient->releaseSoftEmergency();
+        setAgvEmergencyUi(false);
+        statusBar()->showMessage(QStringLiteral("已解除急停"), 3000);
+    } else {
+        m_agvClient->softEmergencyStop();
+        setAgvEmergencyUi(true);
+        statusBar()->showMessage(QStringLiteral("⛔ 急停已触发"), 3000);
+        updateNavButtons(QStringLiteral("idle"));
+    }
+}
+
+// 急停按钮两种状态：未急停 -> “⛔ 急停”（红）；急停中 -> “解除急停”（绿）
+void MainWindow::setAgvEmergencyUi(bool active)
+{
+    m_agvEmergency = active;
+    QPushButton *b = ui->btnAgvEmergency;
+    b->setText(active ? QStringLiteral("解除急停") : QStringLiteral("⛔ 急停"));
+    b->setToolTip(active ? QStringLiteral("解除 AGV 软急停") : QStringLiteral("触发 AGV 软急停"));
+    b->setProperty("estopActive", active);
+    // 动态属性变化后需要重新应用样式
+    b->style()->unpolish(b);
+    b->style()->polish(b);
 }
 
 void MainWindow::onAgvNavStartClicked()
@@ -1104,6 +1135,11 @@ void MainWindow::applyConnectionState()
     ui->btnAgvRight     ->setEnabled(agvOn);
     ui->btnAgvStop      ->setEnabled(agvOn);
     ui->btnAgvEmergency ->setEnabled(agvOn);
+    if (!agvOn) {
+        // 断开后状态未知：复位为“急停”，并清掉上报缓存，重连后以 AGV 上报为准
+        m_agvReportedSoftEmc = false;
+        if (m_agvEmergency) setAgvEmergencyUi(false);
+    }
     ui->cmbAgvStations  ->setEnabled(agvOn);
     ui->btnViewMap      ->setEnabled(agvOn);
     // 导航控件依赖导航状态再叠加（运行中不能再次开始等）

@@ -17,9 +17,13 @@
         <!-- 主窗口 -->
         <file alias="styles/mainwindow.qss">styles/mainwindow.qss</file>
 
+        <!-- 主界面控件 -->
+        <file alias="styles/controls/handpanel.qss">styles/controls/handpanel.qss</file>
+
         <!-- 对话框 -->
         <file alias="styles/dialogs/settingsdialog.qss">styles/dialogs/settingsdialog.qss</file>
         <file alias="styles/dialogs/mapinfodialog.qss">styles/dialogs/mapinfodialog.qss</file>
+        <file alias="styles/dialogs/handviewdialog.qss">styles/dialogs/handviewdialog.qss</file>
         <file alias="styles/dialogs/webviewdialog.qss">styles/dialogs/webviewdialog.qss</file>
 
         <!-- Android 内嵌网页（Qt WebView，QML） -->

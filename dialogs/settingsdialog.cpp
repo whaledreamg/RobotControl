@@ -4,6 +4,9 @@
 #include "../core/qssmanager.h"
 #include "dialogutil.h"
 
+#include <QDialogButtonBox>
+#include <QPushButton>
+
 // 与 dialogs.pri 一致：iOS / WASM 不参与 Web 相关代码的构建
 #if !defined(Q_OS_IOS) && !defined(Q_OS_WASM)
 #define ROBOT_HAS_WEBVIEW 1
@@ -22,6 +25,12 @@ SettingsDialog::SettingsDialog(QWidget *parent)
     m_testTabIndex = ui->tabs->addTab(m_testPanel, QStringLiteral("业务调试"));
     connect(ui->tabs, &QTabWidget::currentChanged, this, &SettingsDialog::onTabChanged);
 #endif
+
+    // 底部按钮的配色由 QSS 的 role 属性决定
+    if (auto *ok = ui->btnBox->button(QDialogButtonBox::Ok))
+        ok->setProperty("role", QStringLiteral("primary"));
+    if (auto *cancel = ui->btnBox->button(QDialogButtonBox::Cancel))
+        cancel->setProperty("role", QStringLiteral("close"));
 
     QssManager::instance()->loadStyleForWidget(this, QStringLiteral("dialogs/settingsdialog"));
     loadFromSettings();

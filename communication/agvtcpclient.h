@@ -274,7 +274,8 @@ public:
 
     // 运动控制
     void stopMotion();
-    void softEmergencyStop();
+    void softEmergencyStop();        // 触发软急停
+    void releaseSoftEmergency();     // 解除软急停
     void openLoopControl(double linear, double angular);
 
     // 导航
