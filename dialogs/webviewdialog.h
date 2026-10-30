@@ -5,7 +5,14 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QLabel>
-#include <QWebEngineView>
+
+// 桌面：QWebEngineView（Qt WebEngine）
+// Android：Qt WebView（Qt 6 仅提供 QML 类型），通过 QQuickWidget 内嵌
+#ifdef Q_OS_ANDROID
+class QQuickWidget;
+#else
+class QWebEngineView;
+#endif
 
 class WebViewDialog : public QDialog
 {
@@ -19,18 +26,32 @@ public:
 
     void loadUrl(const QString &url);
 
+protected:
+    void showEvent(QShowEvent *event) override;
+
 private slots:
+    void onLoadStatus(int status, const QString &url, const QString &error);
     void onUrlEdited();
     void onBack();
     void onForward();
     void onReload();
-    void onViewUrlChanged(const QUrl &url);
+    void onViewUrlChanged(const QString &url);
     void onViewTitleChanged(const QString &title);
 
 private:
     void setupUi();
+#ifdef Q_OS_ANDROID
+    void initQuickView();
+#endif
 
+#ifdef Q_OS_ANDROID
+    QQuickWidget   *m_view = nullptr;
+#else
     QWebEngineView *m_view = nullptr;
+#endif
+    QLabel         *m_statusLabel = nullptr;
+    QString         m_pendingUrl;   // 窗口首次显示前请求的地址，显示后再真正加载
+    bool            m_shown = false;
     QLineEdit      *m_urlEdit = nullptr;
     QPushButton    *m_btnBack = nullptr;
     QPushButton    *m_btnForward = nullptr;

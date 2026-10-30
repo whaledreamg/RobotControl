@@ -139,6 +139,20 @@ QPushButton#btnLiftStop:hover, QPushButton#btnLiftStop:pressed {
     background-color: #D32F2F;
     color: white;
 }
+/* AGV 急停按钮的“解除急停”状态：薄荷绿（代码设置 estopActive=true） */
+QPushButton#btnAgvEmergency[estopActive="true"] {
+    background-color: rgba(94, 201, 159, 90);
+    color: #3fa37a;
+}
+QPushButton#btnAgvEmergency[estopActive="true"]:hover {
+    background-color: #5ec99f;
+    color: #ffffff;
+}
+QPushButton#btnAgvEmergency[estopActive="true"]:pressed {
+    background-color: #3fa37a;
+    color: #ffffff;
+}
+
 QPushButton#btnArmProjectStop:disabled,
 QPushButton#btnAgvEmergency:disabled {
     background-color: rgba(220, 228, 238, 120);

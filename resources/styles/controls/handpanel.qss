@@ -1,0 +1,88 @@
+/* =====================================================
+ * controls/handpanel.qss - 主界面灵巧手面板样式 (果冻风)
+ * 作用于 DualHandPanel 及其子控件
+ *   - 状态点 / 状态文字：动态属性 state = online | partial | offline
+ *   - 按钮：动态属性 role = primary | success | warning | danger | secondary
+ * ===================================================== */
+
+DualHandPanel {
+    background: transparent;
+}
+
+/* ---------- 单手卡片 ---------- */
+QFrame#handPanel {
+    background-color: rgba(255, 255, 255, 230);
+    border: 1px solid rgba(200, 210, 230, 180);
+    border-radius: 12px;
+}
+
+QFrame#handPanel QLabel {
+    background: transparent;
+}
+
+QLabel#handTitle {
+    color: #1E1E1E;
+    font-weight: bold;
+    font-size: 14px;
+}
+
+/* ---------- 在线状态 ---------- */
+QLabel#handStatusDot {
+    color: #9AA5B8;
+    font-size: 13px;
+}
+QLabel#handStatusDot[state="online"]  { color: #3FA37A; }
+QLabel#handStatusDot[state="partial"] { color: #F4A261; }
+
+QLabel#handStatusText {
+    color: #8A93A6;
+    font-size: 11px;
+}
+QLabel#handStatusText[state="online"]  { color: #3FA37A; }
+QLabel#handStatusText[state="partial"] { color: #D98A4A; }
+
+QLabel#handError {
+    color: #C44A47;
+    font-size: 10px;
+}
+
+/* ---------- 按钮：半透明底色 + 深色字，hover 变实色 ---------- */
+DualHandPanel QPushButton {
+    border: none;
+    border-radius: 10px;
+    padding: 6px 16px;
+    min-height: 24px;
+    font-weight: bold;
+    font-size: 13px;
+}
+
+DualHandPanel QPushButton[role="primary"]   { background-color: rgba(74, 144, 226, 90);  color: #357ABD; }
+DualHandPanel QPushButton[role="success"]   { background-color: rgba(94, 201, 159, 90);  color: #3FA37A; }
+DualHandPanel QPushButton[role="warning"]   { background-color: rgba(244, 162, 97, 90);  color: #D98A4A; }
+DualHandPanel QPushButton[role="danger"]    { background-color: rgba(239, 111, 108, 90); color: #C44A47; }
+DualHandPanel QPushButton[role="secondary"] { background-color: rgba(167, 139, 207, 90); color: #8466B3; }
+
+DualHandPanel QPushButton[role="primary"]:hover   { background-color: #4A90E2; color: #FFFFFF; }
+DualHandPanel QPushButton[role="success"]:hover   { background-color: #5EC99F; color: #FFFFFF; }
+DualHandPanel QPushButton[role="warning"]:hover   { background-color: #F4A261; color: #FFFFFF; }
+DualHandPanel QPushButton[role="danger"]:hover    { background-color: #EF6F6C; color: #FFFFFF; }
+DualHandPanel QPushButton[role="secondary"]:hover { background-color: #A78BCF; color: #FFFFFF; }
+
+DualHandPanel QPushButton[role="primary"]:pressed   { background-color: #357ABD; color: #FFFFFF; }
+DualHandPanel QPushButton[role="success"]:pressed   { background-color: #3FA37A; color: #FFFFFF; }
+DualHandPanel QPushButton[role="warning"]:pressed   { background-color: #D98A4A; color: #FFFFFF; }
+DualHandPanel QPushButton[role="danger"]:pressed    { background-color: #C44A47; color: #FFFFFF; }
+DualHandPanel QPushButton[role="secondary"]:pressed { background-color: #8466B3; color: #FFFFFF; }
+
+DualHandPanel QPushButton:disabled {
+    background-color: rgba(220, 228, 238, 120);
+    color: #8A99AD;
+}
+
+/* 标题行的 View 按钮：胶囊形小按钮，需清零全局 padding / min-height */
+QPushButton#handBtnView {
+    border-radius: 13px;
+    padding: 0 16px;
+    min-height: 0;
+    font-size: 12px;
+}

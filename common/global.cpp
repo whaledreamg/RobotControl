@@ -75,6 +75,8 @@ QJsonObject AgvState::toJson() const
     obj["linearVel"] = linearVel;
     obj["angularVel"] = angularVel;
     obj["battery"] = battery;
+    obj["emergency"] = emergency;
+    obj["soft_emc"] = softEmergency;
     obj["status"] = status;
     obj["currentStation"] = currentStation;
     obj["targetStation"] = targetStation;
@@ -91,6 +93,12 @@ AgvState AgvState::fromJson(const QJsonObject &obj)
     s.angularVel = obj.value("angularVel").toDouble();
     s.battery = obj.value("battery").toInt();
     s.status = obj.value("status").toString();
+    s.emergency = obj.value("emergency").toBool();       // 物理急停按钮
+    s.softEmergency = obj.value("soft_emc").toBool();    // 软急停（19301 robot_push）
+    if (s.emergency)
+        s.status = QStringLiteral("⛔ 急停");
+    else if (s.softEmergency)
+        s.status = QStringLiteral("⛔ 软急停");
     s.currentStation = obj.value("currentStation").toString();
     s.targetStation = obj.value("targetStation").toString();
     return s;

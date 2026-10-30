@@ -60,6 +60,7 @@ private slots:
     void onAgvRightPressed();     void onAgvRightReleased();
     void onAgvStopClicked();
     void onAgvEmergencyClicked();
+    void setAgvEmergencyUi(bool active);
     void onAgvNavStartClicked();
     void onAgvNavPauseClicked();
     void onAgvNavCancelClicked();
@@ -152,6 +153,8 @@ private:
 
     bool m_armConnected = false;
     bool m_agvConnected = false;
+    bool m_agvEmergency = false;           // 软急停按钮当前状态（true=软急停中，按钮显示“解除急停”）
+    bool m_agvReportedSoftEmc = false;     // AGV 最近一次推送的 soft_emc，用于检测变化
 
     // AGV 导航状态: "running" / "paused" / "idle"
     QString m_navStatus = QStringLiteral("idle");

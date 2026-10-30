@@ -630,6 +630,11 @@ void AgvTcpClient::softEmergencyStop()
     if (m_mgr) m_mgr->others()->setSoftEmergency(true);
 }
 
+void AgvTcpClient::releaseSoftEmergency()
+{
+    if (m_mgr) m_mgr->others()->setSoftEmergency(false);
+}
+
 void AgvTcpClient::openLoopControl(double linear, double angular)
 {
     if (m_mgr) m_mgr->control()->startContinuousMove(linear, 0, angular);

@@ -13,6 +13,12 @@ qtHaveModule(webenginewidgets) {
         QT += webenginewidgets
 }
 
+# Android 上使用 Qt WebView（Qt 6 中仅有 QML 类型，无 C++ 控件），
+# 通过 QQuickWidget 嵌入 widgets 界面。
+android {
+    QT += quickwidgets webview
+}
+
 CONFIG   += c++17
 CONFIG   += thread
 

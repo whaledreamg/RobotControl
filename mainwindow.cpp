@@ -16,7 +16,7 @@
 // QtWebEngineWidgets 仅在桌面平台可用。Android 上该模块不存在，
 // 因此 webviewdialog 系列源文件被排除（见 dialogs/dialogs.pri），
 // 这里也相应条件包含头文件。
-#if !defined(Q_OS_ANDROID) && !defined(Q_OS_IOS) && !defined(Q_OS_WASM)
+#if !defined(Q_OS_IOS) && !defined(Q_OS_WASM)
 #include "dialogs/webviewdialog.h"
 #endif
 
@@ -30,6 +30,7 @@
 #include <QSpinBox>
 #include <QDoubleSpinBox>
 #include <QLineEdit>
+#include <QStyle>
 #include <QTimer>
 #include <QDateTime>
 #include <QVariantList>
@@ -355,6 +356,14 @@ void MainWindow::onUpdateClock()
 void MainWindow::onAgvState(const AgvState &state) {
     updateAgvStateUi(state);
 
+    // 软急停按钮以 AGV 推送的 soft_emc 为准（物理急停按钮 emergency 不在此处理），
+    // 仅在上报值变化时同步：其他控制端触发/解除软急停时按钮跟着变；
+    // 上报值不变时不覆盖本地刚做的操作结果
+    if (state.softEmergency != m_agvReportedSoftEmc) {
+        m_agvReportedSoftEmc = state.softEmergency;
+        setAgvEmergencyUi(state.softEmergency);
+    }
+
     // 推送到地图弹窗
     if (m_mapDialog && m_mapDialog->isVisible()) {
         m_mapDialog->updateAgvPose(state.x, state.y, qRadiansToDegrees(state.theta));
@@ -446,9 +455,31 @@ void MainWindow::onAgvStopClicked()
 }
 void MainWindow::onAgvEmergencyClicked()
 {
-    if (m_agvClient) m_agvClient->softEmergencyStop();
-    statusBar()->showMessage(QStringLiteral("⛔ 急停已触发"), 3000);
-    updateNavButtons(QStringLiteral("idle"));
+    if (!m_agvClient) return;
+    if (m_agvEmergency) {
+        // 当前处于急停 -> 解除
+        m_agvClient->releaseSoftEmergency();
+        setAgvEmergencyUi(false);
+        statusBar()->showMessage(QStringLiteral("已解除急停"), 3000);
+    } else {
+        m_agvClient->softEmergencyStop();
+        setAgvEmergencyUi(true);
+        statusBar()->showMessage(QStringLiteral("⛔ 急停已触发"), 3000);
+        updateNavButtons(QStringLiteral("idle"));
+    }
+}
+
+// 急停按钮两种状态：未急停 -> “⛔ 急停”（红）；急停中 -> “解除急停”（绿）
+void MainWindow::setAgvEmergencyUi(bool active)
+{
+    m_agvEmergency = active;
+    QPushButton *b = ui->btnAgvEmergency;
+    b->setText(active ? QStringLiteral("解除急停") : QStringLiteral("⛔ 急停"));
+    b->setToolTip(active ? QStringLiteral("解除 AGV 软急停") : QStringLiteral("触发 AGV 软急停"));
+    b->setProperty("estopActive", active);
+    // 动态属性变化后需要重新应用样式
+    b->style()->unpolish(b);
+    b->style()->polish(b);
 }
 
 void MainWindow::onAgvNavStartClicked()
@@ -758,12 +789,15 @@ void MainWindow::onArmRefreshClicked()
 void MainWindow::onArmViewClicked()
 {
     // 机械臂 Web 界面 URL
-    // WebViewDialog 依赖 QtWebEngineWidgets，在 Android / iOS / WASM 平台不可用。
-#if !defined(Q_OS_ANDROID) && !defined(Q_OS_IOS) && !defined(Q_OS_WASM)
+    // 桌面用 QtWebEngine，Android 用 Qt WebView；iOS / WASM 未适配。
+#if !defined(Q_OS_IOS) && !defined(Q_OS_WASM)
     static WebViewDialog *dlg = nullptr;
     if (!dlg) {
-        dlg = new WebViewDialog(QStringLiteral("http://192.168.100.16:9198/"),
-                                QStringLiteral("机械臂 Web"), this);
+        dlg = new WebViewDialog(url, QStringLiteral("机械臂 Web"), this);
+        loadedUrl = url;
+    } else if (url != loadedUrl) {
+        dlg->loadUrl(url);
+        loadedUrl = url;
     }
     dlg->show();
     dlg->raise();
@@ -933,7 +967,10 @@ void MainWindow::onHandStopAllRequested()
     const QVector<int> zeros(HAND_DOF_COUNT, 0);
     QString e1 = m_handManager->left()->writeAll(zeros);
     QString e2 = m_handManager->right()->writeAll(zeros);
+    // 地址来自设置页（默认 DEFAULT_ARM_WEB_URL）；设置被修改后再次打开时重新加载
     if (m_messageManager) {
+    static QString loadedUrl;
+    const QString url = SettingsManager::instance()->armWebUrl();
         if (e1.isEmpty() && e2.isEmpty())
             m_messageManager->success(QStringLiteral("灵巧手已急停"));
         else
@@ -1098,6 +1135,11 @@ void MainWindow::applyConnectionState()
     ui->btnAgvRight     ->setEnabled(agvOn);
     ui->btnAgvStop      ->setEnabled(agvOn);
     ui->btnAgvEmergency ->setEnabled(agvOn);
+    if (!agvOn) {
+        // 断开后状态未知：复位为“急停”，并清掉上报缓存，重连后以 AGV 上报为准
+        m_agvReportedSoftEmc = false;
+        if (m_agvEmergency) setAgvEmergencyUi(false);
+    }
     ui->cmbAgvStations  ->setEnabled(agvOn);
     ui->btnViewMap      ->setEnabled(agvOn);
     // 导航控件依赖导航状态再叠加（运行中不能再次开始等）

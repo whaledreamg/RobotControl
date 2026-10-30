@@ -1,5 +1,6 @@
 #include "mapinfodialog.h"
 #include "core/qssmanager.h"
+#include "dialogs/dialogutil.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -398,6 +399,7 @@ MapInfoDialog::MapInfoDialog(QWidget *parent)
 
     // 加载对话框专用样式
     QssManager::instance()->loadStyleForWidget(this, QStringLiteral("dialogs/mapinfodialog"));
+    DialogUtil::adaptForMobile(this);
 }
 
 void MapInfoDialog::initUi()
@@ -457,7 +459,15 @@ void MapInfoDialog::initUi()
     // QDialog::accept()/done() 在 show() 模式下不会隐藏窗口，
     // 表现为"点关闭关不掉"。这里直接调用 close() 关闭窗口。
     connect(btnClose, &QPushButton::clicked, this, &QWidget::close);
+#ifdef Q_OS_ANDROID
+    // 手机屏幕宽度不够放下整行控件，关闭按钮会被挤出屏幕外，
+    // 因此单独放到第二行，并隐藏桌面端才有意义的鼠标操作提示
+    lblHint->hide();
+    btnClose->setMinimumHeight(48);
+    top->addWidget(btnClose, 1, 0, 1, 9);
+#else
     top->addWidget(btnClose, 0, 8);
+#endif
 
     // 设置列拉伸
     top->setColumnStretch(1, 0);

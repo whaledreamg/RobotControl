@@ -15,6 +15,8 @@ struct AgvState
     double linearVel = 0.0;  // 线速度
     double angularVel = 0.0; // 角速度
     int battery = 0;         // 电量百分比 0-100
+    bool emergency = false;  // 物理急停按钮是否按下（推送的 emergency 字段）
+    bool softEmergency = false; // 软急停是否生效（推送的 soft_emc 字段）
     QString status;          // 状态描述
     QString currentStation;  // 当前站点
     QString targetStation;   // 目标站点

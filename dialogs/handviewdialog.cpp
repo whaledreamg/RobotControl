@@ -1,5 +1,7 @@
 #include "dialogs/handviewdialog.h"
 #include "communication/revo2hand.h"
+#include "dialogs/dialogutil.h"
+#include "core/qssmanager.h"
 
 #include <QAbstractSlider>
 #include <QApplication>
@@ -213,10 +215,7 @@ MicroCard::MicroCard(int dofIdx, QWidget *parent)
 {
     m_maxDeg = dofMaxDeg(dofIdx);
 
-    setObjectName(QStringLiteral("microCard"));
-    setStyleSheet(QStringLiteral(
-        "QFrame#microCard { background: rgba(255,255,255,140); "
-        "border: 1px solid #dcdfe6; border-radius: 8px; padding: 4px; }"));
+    setObjectName(QStringLiteral("microCard"));   // 样式见 dialogs/handviewdialog.qss
 
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(4, 4, 4, 4);
@@ -226,7 +225,7 @@ MicroCard::MicroCard(int dofIdx, QWidget *parent)
     QString nameCn = handDofNameCnList().value(dofIdx,
                                            QStringLiteral("DOF%1").arg(dofIdx));
     auto *nameLabel = new QLabel(QStringLiteral("%1\n0~%2°").arg(nameCn).arg(m_maxDeg));
-    nameLabel->setStyleSheet(QStringLiteral("font-size: 11px; font-weight: bold;"));
+    nameLabel->setProperty("role", QStringLiteral("cardTitle"));
     nameLabel->setAlignment(Qt::AlignCenter);
     layout->addWidget(nameLabel);
 
@@ -236,7 +235,7 @@ MicroCard::MicroCard(int dofIdx, QWidget *parent)
     sendRow->setContentsMargins(0, 0, 0, 0);
     auto *tag = new QLabel(QStringLiteral("发送"));
     tag->setFixedWidth(28);
-    tag->setStyleSheet(QStringLiteral("font-size: 9px; color: #909399;"));
+    tag->setProperty("role", QStringLiteral("tag"));
     sendRow->addWidget(tag);
 
     m_sendSlider = new QSlider(Qt::Horizontal);
@@ -271,10 +270,11 @@ MicroCard::MicroCard(int dofIdx, QWidget *parent)
     curRow->setContentsMargins(0, 0, 0, 0);
     auto *tag2 = new QLabel(QStringLiteral("当前"));
     tag2->setFixedWidth(28);
-    tag2->setStyleSheet(QStringLiteral("font-size: 9px; color: #909399;"));
+    tag2->setProperty("role", QStringLiteral("tag"));
     curRow->addWidget(tag2);
 
     m_curSlider = new QSlider(Qt::Horizontal);
+    m_curSlider->setObjectName(QStringLiteral("curSlider"));   // 只读“当前位置”条，QSS 里配成绿色
     m_curSlider->setMinimum(0);
     m_curSlider->setMaximum(m_maxDeg * 10);
     m_curSlider->setValue(0);
@@ -283,8 +283,7 @@ MicroCard::MicroCard(int dofIdx, QWidget *parent)
     curRow->addWidget(m_curSlider, 1);
 
     m_curLabel = new QLabel(QStringLiteral("—"));
-    m_curLabel->setStyleSheet(
-        QStringLiteral("font-size: 11px; font-family: Consolas, monospace; color: #909399;"));
+    m_curLabel->setProperty("role", QStringLiteral("mono"));
     m_curLabel->setFixedWidth(58);
     m_curLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     curRow->addWidget(m_curLabel);
@@ -387,6 +386,7 @@ FingerMicroTab::FingerMicroTab(Revo2HandClient *client, QWidget *parent)
     meta->addStretch(1);
 
     m_btnRead = new QPushButton(QStringLiteral("读取当前位置"));
+    m_btnRead->setProperty("role", QStringLiteral("primary"));
     m_btnRead->setCursor(Qt::PointingHandCursor);
     connect(m_btnRead, &QPushButton::clicked, this, &FingerMicroTab::onReadClicked);
     meta->addWidget(m_btnRead);
@@ -414,11 +414,10 @@ FingerMicroTab::FingerMicroTab(Revo2HandClient *client, QWidget *parent)
     // 状态行
     auto *infoRow = new QHBoxLayout();
     m_lblStat = new QLabel(QStringLiteral("先读取当前位置，发送条对齐后再拖动"));
-    m_lblStat->setStyleSheet(QStringLiteral("font-size: 11px; color: #909399;"));
+    m_lblStat->setProperty("role", QStringLiteral("hint"));
     infoRow->addWidget(m_lblStat, 1);
     m_lblCounter = new QLabel(QStringLiteral("TX:0 RX:0 ERR:0"));
-    m_lblCounter->setStyleSheet(
-        QStringLiteral("font-size: 11px; font-family: Consolas, monospace; color: #909399;"));
+    m_lblCounter->setProperty("role", QStringLiteral("mono"));
     infoRow->addWidget(m_lblCounter);
     layout->addLayout(infoRow);
 
@@ -587,6 +586,7 @@ PresetTab::PresetTab(Revo2HandClient *client, QWidget *parent)
         row->setSpacing(8);
 
         QPushButton *btn = new QPushButton(QStringLiteral("✋  %1").arg(it.key()));
+        btn->setProperty("role", QStringLiteral("preset"));
         btn->setCursor(Qt::PointingHandCursor);
         btn->setMinimumHeight(36);
         connect(btn, &QPushButton::clicked, [this, name = it.key()]() {
@@ -595,7 +595,7 @@ PresetTab::PresetTab(Revo2HandClient *client, QWidget *parent)
         row->addWidget(btn, 1);
 
         QLabel *desc = new QLabel(it.value());
-        desc->setStyleSheet(QStringLiteral("font-size: 11px; color: #909399;"));
+        desc->setProperty("role", QStringLiteral("hint"));
         row->addWidget(desc, 2);
         layout->addLayout(row);
     }
@@ -619,7 +619,7 @@ ModbusDebugTab::ModbusDebugTab(Revo2HandClient *client, QWidget *parent)
     // 状态
     auto *statusRow = new QHBoxLayout();
     m_lblStatus = new QLabel(QStringLiteral("通道状态: —"));
-    m_lblStatus->setStyleSheet(QStringLiteral("font-size: 12px; color: #909399;"));
+    m_lblStatus->setProperty("role", QStringLiteral("hint"));
     statusRow->addWidget(m_lblStatus);
     statusRow->addStretch(1);
 
@@ -658,6 +658,7 @@ ModbusDebugTab::ModbusDebugTab(Revo2HandClient *client, QWidget *parent)
 
     auto *quick = new QHBoxLayout();
     QPushButton *btnSend = new QPushButton(QStringLiteral("发送"));
+    btnSend->setProperty("role", QStringLiteral("primary"));
     btnSend->setCursor(Qt::PointingHandCursor);
     connect(btnSend, &QPushButton::clicked, this, &ModbusDebugTab::onSendClicked);
     quick->addWidget(btnSend);
@@ -876,6 +877,7 @@ ParamConfigTab::ParamConfigTab(Revo2HandClient *client, QWidget *parent)
     auto *btnRow = new QHBoxLayout();
     btnRow->addStretch(1);
     QPushButton *btnSave = new QPushButton(QStringLiteral("保存（立即生效）"));
+    btnSave->setProperty("role", QStringLiteral("success"));
     btnSave->setCursor(Qt::PointingHandCursor);
     connect(btnSave, &QPushButton::clicked, this, &ParamConfigTab::onSave);
     btnRow->addWidget(btnSave);
@@ -922,11 +924,13 @@ SequenceEditTab::SequenceEditTab(Revo2HandClient *client, QWidget *parent)
     btnRow->addWidget(btnAdd);
 
     QPushButton *btnDel = new QPushButton(QStringLiteral("- 删除选中"));
+    btnDel->setProperty("role", QStringLiteral("danger"));
     btnDel->setCursor(Qt::PointingHandCursor);
     connect(btnDel, &QPushButton::clicked, this, &SequenceEditTab::onDelRow);
     btnRow->addWidget(btnDel);
 
     QPushButton *btnClear = new QPushButton(QStringLiteral("清空"));
+    btnClear->setProperty("role", QStringLiteral("danger"));
     btnClear->setCursor(Qt::PointingHandCursor);
     connect(btnClear, &QPushButton::clicked, this, &SequenceEditTab::onClear);
     btnRow->addWidget(btnClear);
@@ -934,11 +938,13 @@ SequenceEditTab::SequenceEditTab(Revo2HandClient *client, QWidget *parent)
     btnRow->addStretch(1);
 
     QPushButton *btnCapture = new QPushButton(QStringLiteral("捕获当前位置"));
+    btnCapture->setProperty("role", QStringLiteral("secondary"));
     btnCapture->setCursor(Qt::PointingHandCursor);
     connect(btnCapture, &QPushButton::clicked, this, &SequenceEditTab::onCapture);
     btnRow->addWidget(btnCapture);
 
     QPushButton *btnPlay = new QPushButton(QStringLiteral("▶ 播放"));
+    btnPlay->setProperty("role", QStringLiteral("success"));
     btnPlay->setCursor(Qt::PointingHandCursor);
     connect(btnPlay, &QPushButton::clicked, this, &SequenceEditTab::onPlay);
     btnRow->addWidget(btnPlay);
@@ -1020,6 +1026,8 @@ HandViewDialog::HandViewDialog(const QString &side,
                        .arg(sideCn(side)));
     resize(900, 620);
     buildUi();
+    QssManager::instance()->loadStyleForWidget(this, QStringLiteral("dialogs/handviewdialog"));
+    DialogUtil::adaptForMobile(this);
 }
 
 HandViewDialog::~HandViewDialog() = default;
@@ -1035,7 +1043,7 @@ void HandViewDialog::buildUi()
         qPrintable(sideCn(m_side)),
         m_client->modbusAddr(),
         qPrintable(m_client->ec2rsSlave())));
-    title->setStyleSheet(QStringLiteral("font-weight: bold; font-size: 14px;"));
+    title->setObjectName(QStringLiteral("dialogTitle"));
     layout->addWidget(title);
 
     m_tabs = new QTabWidget();
@@ -1049,8 +1057,10 @@ void HandViewDialog::buildUi()
     auto *btnRow = new QHBoxLayout();
     btnRow->addStretch(1);
     QPushButton *btnClose = new QPushButton(QStringLiteral("关闭"));
+    btnClose->setProperty("role", QStringLiteral("close"));
     btnClose->setCursor(Qt::PointingHandCursor);
-    connect(btnClose, &QPushButton::clicked, this, &QDialog::accept);
+    // 通过 show() 显示且设置了 WA_DeleteOnClose，用 close() 才能真正关闭并释放
+    connect(btnClose, &QPushButton::clicked, this, &QWidget::close);
     btnRow->addWidget(btnClose);
     layout->addLayout(btnRow);
 }

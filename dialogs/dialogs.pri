@@ -7,6 +7,7 @@ QT += concurrent
 
 # handviewdialog 依赖 ui/ 下的 Revo2 灵巧手客户端，无平台限制
 HEADERS += \
+    $$PWD/dialogutil.h \
     $$PWD/settingsdialog.h \
     $$PWD/handviewdialog.h \
     $$PWD/mapinfodialog.h
@@ -16,11 +17,14 @@ SOURCES += \
     $$PWD/handviewdialog.cpp \
     $$PWD/mapinfodialog.cpp
 
-# webenginewidgets 不支持 Android / iOS / WASM（仅桌面平台可用），因此
-# webviewdialog 系列源文件仅在桌面平台加入构建。Android 上 WebViewDialog
-# 类整体不参与编译，mainwindow.cpp 中相关代码已用 Q_OS_xxx 宏守护。
-!android:!ios:!wasm: HEADERS += \
-    $$PWD/webviewdialog.h
+# WebViewDialog：
+#   桌面     -> QWebEngineView（Qt WebEngine）
+#   Android  -> Qt WebView（QML WebView，经 QQuickWidget 内嵌，见 RobotControl.pro）
+# iOS / WASM 暂未适配，不参与构建。
+!ios:!wasm: HEADERS += \
+    $$PWD/webviewdialog.h \
+    $$PWD/businesstestpanel.h
 
-!android:!ios:!wasm: SOURCES += \
-    $$PWD/webviewdialog.cpp
+!ios:!wasm: SOURCES += \
+    $$PWD/webviewdialog.cpp \
+    $$PWD/businesstestpanel.cpp

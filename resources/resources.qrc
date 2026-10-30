@@ -17,9 +17,20 @@
         <!-- 主窗口 -->
         <file alias="styles/mainwindow.qss">styles/mainwindow.qss</file>
 
+        <!-- 主界面控件 -->
+        <file alias="styles/controls/handpanel.qss">styles/controls/handpanel.qss</file>
+
         <!-- 对话框 -->
         <file alias="styles/dialogs/settingsdialog.qss">styles/dialogs/settingsdialog.qss</file>
         <file alias="styles/dialogs/mapinfodialog.qss">styles/dialogs/mapinfodialog.qss</file>
+        <file alias="styles/dialogs/handviewdialog.qss">styles/dialogs/handviewdialog.qss</file>
         <file alias="styles/dialogs/webviewdialog.qss">styles/dialogs/webviewdialog.qss</file>
+
+        <!-- Android 内嵌网页（Qt WebView，QML） -->
+        <file alias="qml/WebViewPage.qml">qml/WebViewPage.qml</file>
+
+        <!-- 设置页「业务调试」标签内嵌的页面（运行时释放到 AppDataLocation/web 后加载） -->
+        <file alias="web/business-test.html">../business-test.html</file>
+        <file alias="web/business-friction.js">../business-friction.js</file>
     </qresource>
 </RCC>

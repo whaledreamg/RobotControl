@@ -1,9 +1,30 @@
 #include "handpanel.h"
 
+#include "../core/qssmanager.h"
+
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
+#include <QStyle>
 #include <QVBoxLayout>
+
+namespace {
+// 切换动态属性后需要重新抛光，QSS 的 [prop="x"] 选择器才会生效
+void setDynamicProp(QWidget *w, const char *name, const QString &value)
+{
+    if (!w || w->property(name).toString() == value) return;
+    w->setProperty(name, value);
+    w->style()->unpolish(w);
+    w->style()->polish(w);
+}
+
+// 在线状态 -> state 属性值（样式见 controls/handpanel.qss）
+void setHandState(QLabel *dot, QLabel *text, const QString &state)
+{
+    setDynamicProp(dot, "state", state);
+    setDynamicProp(text, "state", state);
+}
+} // namespace
 
 // ============================================================================
 // HandPanel
@@ -12,13 +33,6 @@ HandPanel::HandPanel(const QString &side, QWidget *parent)
     : QFrame(parent), m_side(side)
 {
     setObjectName(QStringLiteral("handPanel"));
-    setStyleSheet(QStringLiteral(
-        "QFrame#handPanel {"
-        "  background: rgba(255,255,255,180);"
-        "  border: 1px solid #E0E0E0;"
-        "  border-radius: 12px;"
-        "  padding: 8px;"
-        "}"));
     buildUi();
     setEnabled(false);
 }
@@ -39,16 +53,16 @@ void HandPanel::buildUi()
     titleRow->setContentsMargins(0, 0, 0, 0);
 
     auto *title = new QLabel(QStringLiteral("🤚  %1  %2").arg(sideCn, sideEn));
-    title->setStyleSheet(QStringLiteral("font-weight: bold; font-size: 14px;"));
+    title->setObjectName(QStringLiteral("handTitle"));
     titleRow->addWidget(title);
     titleRow->addStretch(1);
 
     m_statusDot = new QLabel(QStringLiteral("●"));
-    m_statusDot->setStyleSheet(QStringLiteral("color: #999999; font-size: 13px;"));
+    m_statusDot->setObjectName(QStringLiteral("handStatusDot"));
     titleRow->addWidget(m_statusDot);
 
     m_statusLabel = new QLabel(QStringLiteral("未初始化"));
-    m_statusLabel->setStyleSheet(QStringLiteral("color: #777777; font-size: 11px;"));
+    m_statusLabel->setObjectName(QStringLiteral("handStatusText"));
     titleRow->addWidget(m_statusLabel);
 
     m_btnView = new QPushButton(QStringLiteral("View"));
@@ -56,6 +70,9 @@ void HandPanel::buildUi()
     m_btnView->setMinimumWidth(50);
     m_btnView->setToolTip(QStringLiteral("6 自由度微调 + Modbus 调试"));
     m_btnView->setCursor(Qt::PointingHandCursor);
+    // 淡紫胶囊小按钮；样式见 controls/handpanel.qss（#handBtnView 清零了全局 padding / min-height）
+    m_btnView->setObjectName(QStringLiteral("handBtnView"));
+    m_btnView->setProperty("role", QStringLiteral("secondary"));
     connect(m_btnView, &QPushButton::clicked, this, [this]() {
         emit viewRequested(m_side);
     });
@@ -71,11 +88,7 @@ void HandPanel::buildUi()
     m_btnGrab = new QPushButton(QStringLiteral("✊  开  抓取"));
     m_btnGrab->setMinimumHeight(36);
     m_btnGrab->setCursor(Qt::PointingHandCursor);
-    m_btnGrab->setStyleSheet(QStringLiteral(
-        "QPushButton { background: #4CAF50; color: white; border: none;"
-        " border-radius: 6px; font-weight: bold; font-size: 13px; }"
-        "QPushButton:disabled { background: #C8C8C8; color: #888888; }"
-        "QPushButton:hover:enabled { background: #43A047; }"));
+    m_btnGrab->setProperty("role", QStringLiteral("success"));
     connect(m_btnGrab, &QPushButton::clicked, this, [this]() {
         emit grabRequested(m_side);
     });
@@ -84,11 +97,7 @@ void HandPanel::buildUi()
     m_btnRelease = new QPushButton(QStringLiteral("🖐  合  释放"));
     m_btnRelease->setMinimumHeight(36);
     m_btnRelease->setCursor(Qt::PointingHandCursor);
-    m_btnRelease->setStyleSheet(QStringLiteral(
-        "QPushButton { background: #FF9800; color: white; border: none;"
-        " border-radius: 6px; font-weight: bold; font-size: 13px; }"
-        "QPushButton:disabled { background: #C8C8C8; color: #888888; }"
-        "QPushButton:hover:enabled { background: #FB8C00; }"));
+    m_btnRelease->setProperty("role", QStringLiteral("warning"));
     connect(m_btnRelease, &QPushButton::clicked, this, [this]() {
         emit releaseRequested(m_side);
     });
@@ -98,7 +107,7 @@ void HandPanel::buildUi()
 
     // ---- 错误提示 ----
     m_errLabel = new QLabel;
-    m_errLabel->setStyleSheet(QStringLiteral("color: #C44A47; font-size: 10px;"));
+    m_errLabel->setObjectName(QStringLiteral("handError"));
     m_errLabel->setWordWrap(true);
     layout->addWidget(m_errLabel);
 }
@@ -121,13 +130,13 @@ void HandPanel::onStateChanged(const HandState &state)
 void HandPanel::applyState(const HandState &state)
 {
     if (state.connected && state.inited) {
-        m_statusDot->setStyleSheet(QStringLiteral("color: #2E7D32; font-size: 13px;"));
+        setHandState(m_statusDot, m_statusLabel, QStringLiteral("online"));
         m_statusLabel->setText(QStringLiteral("在线"));
     } else if (state.connected) {
-        m_statusDot->setStyleSheet(QStringLiteral("color: #F57C00; font-size: 13px;"));
+        setHandState(m_statusDot, m_statusLabel, QStringLiteral("partial"));
         m_statusLabel->setText(QStringLiteral("已连接（通道未 init）"));
     } else {
-        m_statusDot->setStyleSheet(QStringLiteral("color: #999999; font-size: 13px;"));
+        setHandState(m_statusDot, m_statusLabel, QStringLiteral("offline"));
         m_statusLabel->setText(QStringLiteral("未初始化"));
     }
     m_errLabel->setText(state.lastError.isEmpty()
@@ -141,7 +150,7 @@ void HandPanel::setEnabled(bool enabled)
     m_btnRelease->setEnabled(enabled);
     m_btnView->setEnabled(true);
     if (!enabled) {
-        m_statusDot->setStyleSheet(QStringLiteral("color: #999999; font-size: 13px;"));
+        setHandState(m_statusDot, m_statusLabel, QStringLiteral("offline"));
         m_statusLabel->setText(QStringLiteral("未初始化"));
         m_errLabel->clear();
     }
@@ -152,7 +161,10 @@ void HandPanel::setEnabled(bool enabled)
 // ============================================================================
 DualHandPanel::DualHandPanel(QWidget *parent) : QWidget(parent)
 {
+    setObjectName(QStringLiteral("dualHandPanel"));
     buildUi();
+    // 放在 buildUi 之后：样式一次性应用到全部子控件（含两个 HandPanel）
+    QssManager::instance()->loadStyleForWidget(this, QStringLiteral("controls/handpanel"));
 }
 
 void DualHandPanel::buildUi()
@@ -183,10 +195,7 @@ void DualHandPanel::buildUi()
     m_btnInit->setMinimumHeight(30);
     m_btnInit->setCursor(Qt::PointingHandCursor);
     m_btnInit->setToolTip(QStringLiteral("setType(Generic485) + ec2rs485/init"));
-    m_btnInit->setStyleSheet(QStringLiteral(
-        "QPushButton { background: #4CAF50; color: white; border: none;"
-        " border-radius: 6px; font-weight: bold; }"
-        "QPushButton:disabled { background: #C8C8C8; color: #888888; }"));
+    m_btnInit->setProperty("role", QStringLiteral("primary"));
     connect(m_btnInit, &QPushButton::clicked, this, &DualHandPanel::initRequested);
     bottom->addWidget(m_btnInit, 1);
 
@@ -194,10 +203,7 @@ void DualHandPanel::buildUi()
     m_btnStopAll->setMinimumHeight(30);
     m_btnStopAll->setCursor(Qt::PointingHandCursor);
     m_btnStopAll->setEnabled(false);
-    m_btnStopAll->setStyleSheet(QStringLiteral(
-        "QPushButton { background: #E53935; color: white; border: none;"
-        " border-radius: 6px; font-weight: bold; }"
-        "QPushButton:disabled { background: #C8C8C8; color: #888888; }"));
+    m_btnStopAll->setProperty("role", QStringLiteral("danger"));
     connect(m_btnStopAll, &QPushButton::clicked, this, &DualHandPanel::stopAllRequested);
     bottom->addWidget(m_btnStopAll, 1);
 
