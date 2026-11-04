@@ -14,6 +14,10 @@
         <file alias="styles/common/common_groupbox.qss">styles/common/common_groupbox.qss</file>
         <file alias="styles/common/common_scrollbar.qss">styles/common/common_scrollbar.qss</file>
 
+        <!-- 图标（左上角 logo / 窗口图标；Android 启动图标在 android/res 下，与此同源） -->
+        <file alias="icons/robot.png">icons/robot.png</file>
+        <file alias="icons/robot.svg">icons/robot.svg</file>
+
         <!-- 主窗口 -->
         <file alias="styles/mainwindow.qss">styles/mainwindow.qss</file>
 

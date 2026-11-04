@@ -10,6 +10,10 @@
 #include <QMutex>
 #include <QWaitCondition>
 #include <QVariant>
+#include <QVariantList>
+#include <QPointer>
+#include <QThread>
+#include <atomic>
 #include <functional>
 
 #include "agvprotocol.h"
@@ -48,9 +52,10 @@ public:
 
     // ===== 发送 =====
     /// 同步发送并等待 seq 匹配的响应；超时或失败返回无效 QVariant
-    QVariant sendSync(uint16_t cmdId, const QJsonObject &obj);
+    /// timeoutSec <= 0 时使用默认超时（切换地图等慢命令可单独放宽）
+    QVariant sendSync(uint16_t cmdId, const QJsonObject &obj, double timeoutSec = -1);
     QVariant sendSync(uint16_t cmdId);                        // 空 body
-    QVariant sendSyncRaw(uint16_t cmdId, const QByteArray &json);
+    QVariant sendSyncRaw(uint16_t cmdId, const QByteArray &json, double timeoutSec = -1);
 
     /// 不等待响应直接写 socket（高频运动控制用）
     bool sendNoWait(uint16_t cmdId, const QJsonObject &obj);
@@ -74,6 +79,8 @@ signals:
     void connectedChanged(const QString &name, bool connected);
     /// 收到推送（object 形式）
     void pushReceived(const QString &name, const QJsonObject &obj);
+    /// 有响应到达 / 连接断开（用于唤醒主线程里的本地事件循环等待）
+    void responseReady();
 
 private slots:
     void onReadyRead();
@@ -93,7 +100,7 @@ private:
 
     QTcpSocket *m_socket = nullptr;
     QByteArray m_buffer;
-    bool m_connected = false;
+    std::atomic<bool> m_connected{false};   // 会被工作线程读取
     double m_sendTimeout = 3.0;     // 秒
 
     mutable QMutex m_mutex;
@@ -120,6 +127,10 @@ public:
                                QObject *parent = nullptr);
 
     void setStateCallback(std::function<void(const QJsonObject &)> cb);
+
+signals:
+    /// 合并后的完整状态（跨线程时自动走队列连接，UI 请连接此信号而不是直接用回调）
+    void stateUpdated(const QJsonObject &state);
 
 protected:
     void handlePush(const AgvProtocol::Frame &frame) override;
@@ -153,6 +164,14 @@ public:
 
     /// 软急停
     void setSoftEmergency(bool status);
+
+    /// 重定位（2002）：x/y 单位 m，angle 单位 rad；home=true 时 x/y/angle 无效
+    /// 阻塞调用，请在工作线程使用。返回 AGV 原始响应，空对象表示无响应
+    QJsonObject teachReloc(double x, double y, double angle, bool home = false);
+    /// 确认定位（2003）
+    QJsonObject confirmLocation();
+    /// 切换地图（2022）。切图耗时较长，超时放宽到 10s
+    QJsonObject reloadMap(const QString &mapName);
 
 private slots:
     void onContinuousTick();
@@ -197,6 +216,8 @@ public:
     QJsonObject getLaserData();
     QJsonObject getNavigationStatus(bool simple = true);
     QJsonObject getRemoteMaps();
+    /// 重定位状态（1021）：reloc_status 0 失败 / 1 成功 / 2 重定位中 / 3 完成待确认
+    QJsonObject getRelocateStatus();
 };
 
 /**
@@ -214,6 +235,14 @@ public:
 
     /// 下载指定地图数据（含 advancedPointList 导航站点）
     QJsonObject getMap(const QString &mapName);
+
+    /// 抢占控制权（4005 robot_config_lock_req）。nickName 为抢占者名称（必填）。
+    /// 阻塞调用，请在工作线程使用。返回 AGV 原始响应，空对象表示无响应
+    QJsonObject lockControl(const QString &nickName);
+
+    /// 释放控制权（4006 robot_config_unlock_req，无请求参数）。
+    /// 只能释放自己抢占的控制权，不能释放别人的。阻塞调用，请在工作线程使用
+    QJsonObject unlockControl();
 };
 
 /**
@@ -271,6 +300,7 @@ public:
                        quint16 pushPort);
     void disconnectFromHost();
     bool isConnected() const;
+    AgvState lastState() const { return m_lastState; }
 
     // 运动控制
     void stopMotion();
@@ -287,21 +317,61 @@ public:
     void requestMapList();
     void requestMapData(const QString &mapName);
 
+    /// 激光数据轮询（200ms，仅地图弹窗可见时开启）
+    void setLaserPolling(bool on);
+
+    // 地图切换 / 重定位（均异步，结果走信号）
+    void switchMap(const QString &mapName);
+    /// 按站点坐标重定位：x/y 单位 m，angle 单位 rad
+    void relocate(double x, double y, double angle, bool home = false);
+    void confirmLocation();
+    void requestRelocateStatus();
+    /// 抢占控制权（走配置端口 19207），结果走 controlLockResult
+    void lockControl(const QString &nickName);
+    /// 释放控制权（只能释放自己抢占的），结果走 controlUnlockResult
+    void unlockControl();
+
 signals:
+    void controlLockResult(bool ok, const QString &msg);
+    void controlUnlockResult(bool ok, const QString &msg);
+    void mapSwitched(bool ok, const QString &mapName, const QString &msg);
+    void relocateFinished(bool ok, const QString &msg);
+    void locationConfirmed(bool ok, const QString &msg);
+    /// 0 失败 / 1 成功 / 2 重定位中 / 3 完成待确认
+    void relocateStatusReceived(int status);
     void ctrlConnectedChanged(bool);
     void pushConnectedChanged(bool);
     void stateReceived(const AgvState &);
+    void navStatusReceived(int taskStatus);
+    void lasersReceived(const QVariantList &lasers);
     void mapListReceived(const QVariantList &, const QString &);
     void mapDataReceived(const QString &, const QVariantMap &);
     void errorOccurred(const QString &);
 
 private:
     void setupManager(const QString &ip);
+    /// 在 connectAll() 创建出各子客户端之后、真正连接之前挂信号
+    /// （构造函数里 pushback()/control() 还是 nullptr，挂不上）
+    void hookManager();
+    /// 合并状态 JSON 并发出 stateReceived（只在主线程调用）
+    void applyState(const QJsonObject &partial);
+    void pollOnce();
+    void pollLasersOnce();
+    /// 阻塞式查询放到工作线程，结果通过队列信号回到主线程
+    void runWorker(std::function<void()> fn);
+    void joinWorkers();
 
     AgvConnectionManager *m_mgr = nullptr;
+    QJsonObject m_stateJson;      // 推送 + 轮询合并后的完整状态
     AgvState m_lastState;
     bool m_ctrlConnected = false;
     bool m_pushConnected = false;
+
+    QTimer *m_pollTimer  = nullptr;
+    QTimer *m_laserTimer = nullptr;
+    std::atomic<bool> m_pollBusy{false};
+    std::atomic<bool> m_laserBusy{false};
+    QList<QPointer<QThread>> m_workers;
 };
 
 // ===========================================================================
@@ -352,6 +422,8 @@ public:
     void setStateCallback(std::function<void(const QJsonObject &)> cb);
 
 signals:
+    /// 各子客户端已创建、尚未连接（外部在此挂信号才不会漏掉连接过程中的事件）
+    void clientsCreated();
     /// 各端口连接诊断信息
     void portsDiagnostic(const QStringList &lines);
 

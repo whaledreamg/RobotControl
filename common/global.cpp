@@ -85,22 +85,41 @@ QJsonObject AgvState::toJson() const
 
 AgvState AgvState::fromJson(const QJsonObject &obj)
 {
+    // 同时兼容两种字段命名：
+    //   - AGV 真实推送 / 1004 查询（与 Python 版一致）：
+    //       x, y, angle(rad), battery_level(0~1), current_station, emergency, blocked
+    //   - 内部序列化格式（toJson）：theta, battery, currentStation, status ...
     AgvState s;
     s.x = obj.value("x").toDouble();
     s.y = obj.value("y").toDouble();
-    s.theta = obj.value("theta").toDouble();
+    s.theta = obj.contains("angle") ? obj.value("angle").toDouble()
+                                    : obj.value("theta").toDouble();
     s.linearVel = obj.value("linearVel").toDouble();
     s.angularVel = obj.value("angularVel").toDouble();
-    s.battery = obj.value("battery").toInt();
-    s.status = obj.value("status").toString();
+
+    if (obj.contains("battery_level"))
+        s.battery = qRound(obj.value("battery_level").toDouble() * 100.0);
+    else
+        s.battery = obj.value("battery").toInt();
+
+    s.currentStation = obj.contains("current_station")
+                           ? obj.value("current_station").toString()
+                           : obj.value("currentStation").toString();
+    s.targetStation = obj.contains("target_station")
+                          ? obj.value("target_station").toString()
+                          : obj.value("targetStation").toString();
+
     s.emergency = obj.value("emergency").toBool();       // 物理急停按钮
     s.softEmergency = obj.value("soft_emc").toBool();    // 软急停（19301 robot_push）
     if (s.emergency)
         s.status = QStringLiteral("⛔ 急停");
     else if (s.softEmergency)
         s.status = QStringLiteral("⛔ 软急停");
-    s.currentStation = obj.value("currentStation").toString();
-    s.targetStation = obj.value("targetStation").toString();
+    else if (obj.value("blocked").toBool())
+        s.status = QStringLiteral("⚠ 被阻挡");
+    else if (obj.value("status").isString())
+        s.status = obj.value("status").toString();
+    // 正常情况 status 留空：由导航状态轮询（任务状态文字）负责显示，避免互相覆盖
     return s;
 }
 

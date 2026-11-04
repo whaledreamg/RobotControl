@@ -9,6 +9,9 @@
 #include <QThread>
 #include <QDebug>
 #include <QMutexLocker>
+#include <QEventLoop>
+#include <QMetaObject>
+#include <QtEndian>
 
 /// 安全转换 QVariant → QJsonObject（兼容 Qt 5/6）
 static inline QJsonObject varToObj(const QVariant &v)
@@ -107,10 +110,21 @@ void AgvTcpClientBase::disconnectFromHost()
     }
     m_buffer.clear();
     setConnected(false);
+    emit responseReady();       // 唤醒主线程局部事件循环
 }
 
 bool AgvTcpClientBase::writeFrame(const QByteArray &frame)
 {
+    // QTcpSocket 只能在其所属线程使用；工作线程发送时投递到主线程写入
+    if (QThread::currentThread() != thread()) {
+        if (!m_connected)
+            return false;
+        QMetaObject::invokeMethod(this, [this, frame]() {
+            if (m_socket && m_socket->state() == QAbstractSocket::ConnectedState)
+                m_socket->write(frame);
+        }, Qt::QueuedConnection);
+        return true;
+    }
     if (!m_socket || m_socket->state() != QAbstractSocket::ConnectedState)
         return false;
     return m_socket->write(frame) == frame.size();
@@ -137,7 +151,7 @@ void AgvTcpClientBase::dumpTx(const QByteArray &frame, quint16 cmdId) const
         .arg(body);
 }
 
-QVariant AgvTcpClientBase::sendSyncRaw(uint16_t cmdId, const QByteArray &json)
+QVariant AgvTcpClientBase::sendSyncRaw(uint16_t cmdId, const QByteArray &json, double timeoutSec)
 {
     if (!isConnected())
         return {};
@@ -159,30 +173,71 @@ QVariant AgvTcpClientBase::sendSyncRaw(uint16_t cmdId, const QByteArray &json)
         return {};
     }
 
+    const qint64 timeoutMs =
+        static_cast<qint64>((timeoutSec > 0 ? timeoutSec : m_sendTimeout) * 1000);
+
+    // ---- 路径 A：在 socket 所属线程（主线程）调用 ----
+    // 响应由本线程的事件循环收包，若用 QWaitCondition 阻塞会永远等不到数据
+    // （必然超时）。这里改用局部事件循环等待，期间 UI 不会被冻死。
+    if (QThread::currentThread() == thread()) {
+        QEventLoop loop;
+        QTimer timeout;
+        timeout.setSingleShot(true);
+        connect(this, &AgvTcpClientBase::responseReady, &loop, &QEventLoop::quit);
+        connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
+        timeout.start(static_cast<int>(timeoutMs));
+
+        while (true) {
+            {
+                QMutexLocker lock(&m_mutex);
+                auto it = m_pending.find(seq);
+                if (it == m_pending.end())          // 被 disconnect 清掉
+                    return {};
+                if (it->isValid())
+                    return m_pending.take(seq);
+            }
+            if (!m_connected || !timeout.isActive()) {
+                QMutexLocker lock(&m_mutex);
+                m_pending.remove(seq);
+                if (m_connected)
+                    qWarning().noquote() << QStringLiteral("[%1] 命令 %2 等待响应超时")
+                                                .arg(m_name).arg(cmdId);
+                return {};
+            }
+            loop.exec(QEventLoop::ExcludeUserInputEvents);
+        }
+    }
+
+    // ---- 路径 B：工作线程调用，QWaitCondition 等待主线程收包后唤醒 ----
     QMutexLocker lock(&m_mutex);
     QElapsedTimer timer;
     timer.start();
-    while (!m_pending.contains(seq) || !m_pending[seq].isValid()) {
-        const qint64 remain = m_sendTimeout * 1000 - timer.elapsed();
+    while (true) {
+        auto it = m_pending.find(seq);
+        if (it == m_pending.end())                  // 被 disconnect 清掉
+            return {};
+        if (it->isValid())
+            return m_pending.take(seq);
+
+        const qint64 remain = timeoutMs - timer.elapsed();
         if (remain <= 0) {
             m_pending.remove(seq);
             qWarning().noquote() << QStringLiteral("[%1] 命令 %2 等待响应超时")
                                         .arg(m_name).arg(cmdId);
             return {};
         }
-        // 断开了也要退出等待
-        if (!m_connected) {
+        if (!m_connected) {                          // 断开了也要退出等待
             m_pending.remove(seq);
             return {};
         }
-        m_respCond.wait(&m_mutex, static_cast<unsigned long>(remain));
+        // 分片等待，避免错过 wakeAll 时久等
+        m_respCond.wait(&m_mutex, static_cast<unsigned long>(qMin<qint64>(remain, 100)));
     }
-    return m_pending.take(seq);
 }
 
-QVariant AgvTcpClientBase::sendSync(uint16_t cmdId, const QJsonObject &obj)
+QVariant AgvTcpClientBase::sendSync(uint16_t cmdId, const QJsonObject &obj, double timeoutSec)
 {
-    return sendSyncRaw(cmdId, QJsonDocument(obj).toJson(QJsonDocument::Compact));
+    return sendSyncRaw(cmdId, QJsonDocument(obj).toJson(QJsonDocument::Compact), timeoutSec);
 }
 
 QVariant AgvTcpClientBase::sendSync(uint16_t cmdId)
@@ -197,19 +252,12 @@ bool AgvTcpClientBase::sendNoWait(uint16_t cmdId, const QJsonObject &obj)
     if (!isConnected())
         return false;
 
+    // 不注册 pending：响应到达后按推送处理（Control 客户端忽略），
+    // 避免 pending 表无限增长
     const quint16 seq = nextSeq();
-    {
-        QMutexLocker lock(&m_mutex);
-        m_pending.insert(seq, QVariant());   // 响应到达后被填上然后丢弃
-    }
     const QByteArray frame =
         AgvProtocol::buildFrame(cmdId, obj, seq);
-    if (!writeFrame(frame)) {
-        QMutexLocker lock(&m_mutex);
-        m_pending.remove(seq);
-        return false;
-    }
-    return true;
+    return writeFrame(frame);
 }
 
 void AgvTcpClientBase::sendAsync(uint16_t cmdId, const QJsonObject &obj,
@@ -262,14 +310,6 @@ void AgvTcpClientBase::processBuffer()
         m_buffer.remove(0, frame.totalSize);
         ++m_rxCount;
 
-        // 上行报文诊断（前 5 条 + 每 50 条）
-        if (m_rxCount <= 5 || m_rxCount % 50 == 1) {
-            qInfo().noquote() << QStringLiteral("[%1] ← AGV 上行报文 (第%2条) cmd=%3 seq=%4 json=%5")
-                                        .arg(m_name).arg(m_rxCount).arg(frame.command)
-                                        .arg(frame.seq)
-                                        .arg(QString::fromUtf8(frame.rawJson.left(300)));
-        }
-
         // 先尝试匹配 pending 请求
         bool matched = false;
         {
@@ -282,8 +322,10 @@ void AgvTcpClientBase::processBuffer()
                 matched = true;
             }
         }
-        if (matched)
+        if (matched) {
+            emit responseReady();
             continue;
+        }
 
         // 未匹配 → 按推送处理
         handlePush(frame);
@@ -346,6 +388,7 @@ void AgvPushbackClient::handlePush(const AgvProtocol::Frame &frame)
     for (auto it = obj.constBegin(); it != obj.constEnd(); ++it)
         m_lastState.insert(it.key(), it.value());
 
+    emit stateUpdated(m_lastState);
     if (m_stateCb)
         m_stateCb(m_lastState);
 }
@@ -422,6 +465,28 @@ void AgvControlClient::setSoftEmergency(bool status)
     sendSync(AgvProtocol::CMD_SET_SOFT_EMERGENCY, p);
 }
 
+QJsonObject AgvControlClient::teachReloc(double x, double y, double angle, bool home)
+{
+    QJsonObject p;
+    p.insert("x", x);
+    p.insert("y", y);
+    p.insert("angle", angle);
+    p.insert("home", home);
+    return varToObj(sendSync(AgvProtocol::CMD_TEACH_RELOC, p));
+}
+
+QJsonObject AgvControlClient::confirmLocation()
+{
+    return varToObj(sendSync(AgvProtocol::CMD_CONFIRM_LOCATION));
+}
+
+QJsonObject AgvControlClient::reloadMap(const QString &mapName)
+{
+    QJsonObject p;
+    p.insert("map_name", mapName);
+    return varToObj(sendSync(AgvProtocol::CMD_RELOAD_MAP, p, 10.0));
+}
+
 // ===========================================================================
 // AgvNavigationClient
 // ===========================================================================
@@ -475,6 +540,11 @@ QJsonObject AgvStatusClient::getLaserData()
     return varToObj(sendSync(AgvProtocol::CMD_GET_LASER_DATA));
 }
 
+QJsonObject AgvStatusClient::getRelocateStatus()
+{
+    return varToObj(sendSync(AgvProtocol::CMD_GET_RELOCATE_STATUS));
+}
+
 QJsonObject AgvStatusClient::getNavigationStatus(bool simple)
 {
     QJsonObject p;
@@ -519,6 +589,18 @@ QJsonObject AgvConfigClient::getMap(const QString &mapName)
     return obj;
 }
 
+QJsonObject AgvConfigClient::lockControl(const QString &nickName)
+{
+    QJsonObject p;
+    p.insert("nick_name", nickName);
+    return varToObj(sendSync(AgvProtocol::CMD_CONFIG_LOCK, p));
+}
+
+QJsonObject AgvConfigClient::unlockControl()
+{
+    return varToObj(sendSync(AgvProtocol::CMD_CONFIG_UNLOCK));
+}
+
 // ===========================================================================
 // AgvOtherClient
 // ===========================================================================
@@ -548,28 +630,52 @@ void AgvOtherClient::setSoftEmergency(bool status)
 AgvTcpClient::AgvTcpClient(QObject *parent)
     : QObject(parent), m_mgr(new AgvConnectionManager(this))
 {
-    // pushback → stateReceived + pushConnectedChanged
-    m_mgr->setStateCallback([this](const QJsonObject &obj) {
-        // 推送分多种类型，通过 type 字段区分
-        int type = obj.value("type").toInt(-1);
-        if (type == 1 || type == 2 || type == 3) {
-            m_lastState = AgvState::fromJson(obj);
-            emit stateReceived(m_lastState);
-        }
-    });
+    qRegisterMetaType<AgvState>("AgvState");
+    qRegisterMetaType<QVariantList>("QVariantList");
+    qRegisterMetaType<QVariantMap>("QVariantMap");
 
-    // pushback connected
+    // 注意：此时 pushback()/control() 还是 nullptr（connectAll() 才会创建），
+    // 所以不能在构造函数里直接对它们 connect —— 否则信号永远挂不上，
+    // 界面就不会刷新。等 connectAll() 创建完子客户端后通过 clientsCreated 再挂。
+    connect(m_mgr, &AgvConnectionManager::clientsCreated,
+            this, &AgvTcpClient::hookManager);
+
+    m_pollTimer = new QTimer(this);
+    m_pollTimer->setInterval(1000);
+    connect(m_pollTimer, &QTimer::timeout, this, &AgvTcpClient::pollOnce);
+
+    m_laserTimer = new QTimer(this);
+    m_laserTimer->setInterval(200);
+    connect(m_laserTimer, &QTimer::timeout, this, &AgvTcpClient::pollLasersOnce);
+}
+
+AgvTcpClient::~AgvTcpClient()
+{
+    if (m_pollTimer)  m_pollTimer->stop();
+    if (m_laserTimer) m_laserTimer->stop();
+    if (m_mgr) m_mgr->disconnectAll();
+    joinWorkers();
+}
+
+void AgvTcpClient::hookManager()
+{
     if (auto *pb = m_mgr->pushback()) {
-        connect(pb, &AgvPushbackClient::connectedChanged,
+        // 推送状态 → 主线程信号（socket 属于主线程，这里本来就是主线程；
+        // 用信号槽而不是回调直接改 UI，跨线程时自动排队）
+        connect(pb, &AgvPushbackClient::stateUpdated,
+                this, &AgvTcpClient::applyState);
+        connect(pb, &AgvTcpClientBase::connectedChanged,
                 this, [this](const QString &, bool c) {
             m_pushConnected = c;
+            if (!c) {
+                m_pollTimer->stop();
+                m_laserTimer->stop();
+            }
             emit pushConnectedChanged(c);
         });
     }
-
-    // control connected
     if (auto *ctrl = m_mgr->control()) {
-        connect(ctrl, &AgvControlClient::connectedChanged,
+        connect(ctrl, &AgvTcpClientBase::connectedChanged,
                 this, [this](const QString &, bool c) {
             m_ctrlConnected = c;
             emit ctrlConnectedChanged(c);
@@ -577,11 +683,105 @@ AgvTcpClient::AgvTcpClient(QObject *parent)
     }
 }
 
-AgvTcpClient::~AgvTcpClient() = default;
+void AgvTcpClient::applyState(const QJsonObject &partial)
+{
+    // 推送与轮询得到的字段互补，统一合并后再转成 AgvState
+    for (auto it = partial.constBegin(); it != partial.constEnd(); ++it)
+        m_stateJson.insert(it.key(), it.value());
+
+    // 还没拿到位置之前不刷新，避免用空数据覆盖界面
+    if (!m_stateJson.contains("x") && !m_stateJson.contains("battery_level"))
+        return;
+
+    m_lastState = AgvState::fromJson(m_stateJson);
+    emit stateReceived(m_lastState);
+}
+
+void AgvTcpClient::runWorker(std::function<void()> fn)
+{
+    // 清理已结束的线程记录
+    m_workers.erase(std::remove_if(m_workers.begin(), m_workers.end(),
+                                   [](const QPointer<QThread> &t) { return t.isNull(); }),
+                    m_workers.end());
+    QThread *t = QThread::create(std::move(fn));
+    connect(t, &QThread::finished, t, &QObject::deleteLater);
+    m_workers.append(t);
+    t->start();
+}
+
+void AgvTcpClient::joinWorkers()
+{
+    for (const QPointer<QThread> &t : std::as_const(m_workers)) {
+        if (t && t->isRunning())
+            t->wait(5000);
+    }
+    m_workers.clear();
+}
+
+void AgvTcpClient::setLaserPolling(bool on)
+{
+    if (on && isConnected())
+        m_laserTimer->start();
+    else
+        m_laserTimer->stop();
+}
+
+void AgvTcpClient::pollOnce()
+{
+    if (!isConnected() || !m_mgr->status() || !m_mgr->status()->isConnected())
+        return;
+    if (m_pollBusy.exchange(true))
+        return;                       // 上一轮还没回来，别堆积
+
+    AgvStatusClient *st = m_mgr->status();
+    runWorker([this, st]() {
+        // 阻塞式查询放工作线程；结果统一用队列信号回到主线程再碰 UI
+        const QJsonObject loc = st->getAgvLocation();
+        const QJsonObject nav = st->getNavigationStatus(true);
+        QMetaObject::invokeMethod(this, [this, loc, nav]() {
+            m_pollBusy = false;
+            if (!loc.isEmpty() && loc.value("ret_code").toInt(0) == 0)
+                applyState(loc);
+            if (nav.contains("task_status"))
+                emit navStatusReceived(nav.value("task_status").toInt());
+        }, Qt::QueuedConnection);
+    });
+}
+
+void AgvTcpClient::pollLasersOnce()
+{
+    if (!isConnected() || !m_mgr->status() || !m_mgr->status()->isConnected())
+        return;
+    if (m_laserBusy.exchange(true))
+        return;
+
+    AgvStatusClient *st = m_mgr->status();
+    runWorker([this, st]() {
+        const QJsonObject resp = st->getLaserData();
+        QMetaObject::invokeMethod(this, [this, resp]() {
+            m_laserBusy = false;
+            if (resp.isEmpty() || resp.value("ret_code").toInt(0) != 0)
+                return;
+            QJsonArray lasers = resp.value("lasers").toArray();
+            if (lasers.isEmpty() && resp.value("data").isObject())
+                lasers = resp.value("data").toObject().value("lasers").toArray();
+            if (lasers.isEmpty() && resp.value("data").isArray())
+                lasers = resp.value("data").toArray();
+            if (!lasers.isEmpty())
+                emit lasersReceived(lasers.toVariantList());
+        }, Qt::QueuedConnection);
+    });
+}
 
 void AgvTcpClient::disconnectFromHost()
 {
+    m_pollTimer->stop();
+    m_laserTimer->stop();
     if (m_mgr) m_mgr->disconnectAll();
+    joinWorkers();                      // disconnectAll 已唤醒等待线程，很快结束
+    m_stateJson = QJsonObject();
+    m_pollBusy = false;
+    m_laserBusy = false;
 }
 
 bool AgvTcpClient::isConnected() const
@@ -609,13 +809,25 @@ void AgvTcpClient::setupManager(const QString &ip)
     p.status   = s->agvStatusPort();
     p.config   = s->agvConfigPort();
     p.other    = 19210;
-    m_mgr->connectAll(ip, p);
+
+    joinWorkers();                      // 重连前确保旧工作线程不再引用旧 client
+    m_stateJson = QJsonObject();
+    const bool ok = m_mgr->connectAll(ip, p);
+    if (!ok) {
+        emit errorOccurred(QStringLiteral("推送端口 %1 连接失败").arg(p.pushback));
+        return;
+    }
+
+    // 对齐 Python：连接后立即拉一次状态，并启动 1s 轮询兜底
+    // （推送端口被防火墙挡 / 推送字段不全时，界面仍能刷新）
+    m_pollTimer->start();
+    QTimer::singleShot(0,   this, &AgvTcpClient::pollOnce);
+    QTimer::singleShot(500, this, &AgvTcpClient::requestMapList);   // 同时填充站点
 }
 
 void AgvTcpClient::connectToHost(const QString &ip,
                                 quint16, quint16, quint16)
 {
-    Q_UNUSED(ip);
     // 忽略旧参数，使用 SettingsManager 端口
     setupManager(ip);
 }
@@ -650,27 +862,170 @@ void AgvTcpClient::startNavigation(const QString &stationId)
 
 void AgvTcpClient::requestMapList()
 {
-    if (!m_mgr) return;
-    auto *st = m_mgr->status();
-    QJsonObject resp = st->getRemoteMaps();
-    QVariantList maps;
-    QString current;
-    if (resp.contains("map_list")) {
-        QJsonArray arr = varToArr(resp.value("map_list"));
-        for (const QJsonValue &v : arr) maps.append(v.toString());
+    if (!m_mgr || !m_mgr->status() || !m_mgr->status()->isConnected()) return;
+    AgvStatusClient *st = m_mgr->status();
+    // 异步：工作线程查询，结果以队列信号回到主线程，不再卡 UI
+    runWorker([this, st]() {
+        const QJsonObject resp = st->getRemoteMaps();
+        QMetaObject::invokeMethod(this, [this, resp]() {
+            if (resp.isEmpty()) {
+                emit errorOccurred(QStringLiteral("获取地图列表失败"));
+                return;
+            }
+            // 不同固件字段名不同：maps / map_list
+            QJsonArray arr = resp.value("maps").toArray();
+            if (arr.isEmpty())
+                arr = resp.value("map_list").toArray();
+            QVariantList maps;
+            for (const QJsonValue &v : std::as_const(arr))
+                maps.append(v.toString());
+            QString current = resp.value("current_map").toString();
+            if (current.isEmpty() && !maps.isEmpty())
+                current = maps.first().toString();
+            emit mapListReceived(maps, current);
+        }, Qt::QueuedConnection);
+    });
+}
+
+void AgvTcpClient::switchMap(const QString &mapName)
+{
+    if (!m_mgr || !m_mgr->control() || !m_mgr->control()->isConnected()) {
+        emit mapSwitched(false, mapName, QStringLiteral("控制端口未连接"));
+        return;
     }
-    current = resp.value("current_map").toString();
-    emit mapListReceived(maps, current);
+    AgvControlClient *ctrl = m_mgr->control();
+    runWorker([this, ctrl, mapName]() {
+        const QJsonObject resp = ctrl->reloadMap(mapName);
+        QMetaObject::invokeMethod(this, [this, mapName, resp]() {
+            if (resp.isEmpty()) {
+                emit mapSwitched(false, mapName, QStringLiteral("无响应（超时或断线）"));
+                return;
+            }
+            const int ret = resp.value("ret_code").toInt(0);
+            emit mapSwitched(ret == 0, mapName,
+                             ret == 0 ? QString() : resp.value("err_msg").toString());
+        }, Qt::QueuedConnection);
+    });
+}
+
+void AgvTcpClient::relocate(double x, double y, double angle, bool home)
+{
+    if (!m_mgr || !m_mgr->control() || !m_mgr->control()->isConnected()) {
+        emit relocateFinished(false, QStringLiteral("控制端口未连接"));
+        return;
+    }
+    AgvControlClient *ctrl = m_mgr->control();
+    runWorker([this, ctrl, x, y, angle, home]() {
+        const QJsonObject resp = ctrl->teachReloc(x, y, angle, home);
+        QMetaObject::invokeMethod(this, [this, resp]() {
+            if (resp.isEmpty()) {
+                emit relocateFinished(false, QStringLiteral("无响应（超时或断线）"));
+                return;
+            }
+            const int ret = resp.value("ret_code").toInt(0);
+            emit relocateFinished(ret == 0,
+                                  ret == 0 ? QString() : resp.value("err_msg").toString());
+        }, Qt::QueuedConnection);
+    });
+}
+
+void AgvTcpClient::confirmLocation()
+{
+    if (!m_mgr || !m_mgr->control() || !m_mgr->control()->isConnected()) {
+        emit locationConfirmed(false, QStringLiteral("控制端口未连接"));
+        return;
+    }
+    AgvControlClient *ctrl = m_mgr->control();
+    runWorker([this, ctrl]() {
+        const QJsonObject resp = ctrl->confirmLocation();
+        QMetaObject::invokeMethod(this, [this, resp]() {
+            if (resp.isEmpty()) {
+                emit locationConfirmed(false, QStringLiteral("无响应（超时或断线）"));
+                return;
+            }
+            const int ret = resp.value("ret_code").toInt(0);
+            emit locationConfirmed(ret == 0,
+                                   ret == 0 ? QString() : resp.value("err_msg").toString());
+        }, Qt::QueuedConnection);
+    });
+}
+
+void AgvTcpClient::lockControl(const QString &nickName)
+{
+    if (!m_mgr || !m_mgr->config() || !m_mgr->config()->isConnected()) {
+        emit controlLockResult(false, QStringLiteral("配置端口未连接"));
+        return;
+    }
+    AgvConfigClient *cfg = m_mgr->config();
+    runWorker([this, cfg, nickName]() {
+        const QJsonObject resp = cfg->lockControl(nickName);
+        QMetaObject::invokeMethod(this, [this, resp]() {
+            if (resp.isEmpty()) {
+                emit controlLockResult(false, QStringLiteral("无响应（超时或断线）"));
+                return;
+            }
+            const int ret = resp.value("ret_code").toInt(0);
+            emit controlLockResult(ret == 0, ret == 0 ? QString()
+                                   : QStringLiteral("ret_code=%1 %2")
+                                         .arg(ret).arg(resp.value("err_msg").toString()));
+        }, Qt::QueuedConnection);
+    });
+}
+
+void AgvTcpClient::unlockControl()
+{
+    if (!m_mgr || !m_mgr->config() || !m_mgr->config()->isConnected()) {
+        emit controlUnlockResult(false, QStringLiteral("配置端口未连接"));
+        return;
+    }
+    AgvConfigClient *cfg = m_mgr->config();
+    runWorker([this, cfg]() {
+        const QJsonObject resp = cfg->unlockControl();
+        QMetaObject::invokeMethod(this, [this, resp]() {
+            if (resp.isEmpty()) {
+                emit controlUnlockResult(false, QStringLiteral("无响应（超时或断线）"));
+                return;
+            }
+            const int ret = resp.value("ret_code").toInt(0);
+            emit controlUnlockResult(ret == 0, ret == 0 ? QString()
+                                     : QStringLiteral("ret_code=%1 %2")
+                                           .arg(ret).arg(resp.value("err_msg").toString()));
+        }, Qt::QueuedConnection);
+    });
+}
+
+void AgvTcpClient::requestRelocateStatus()
+{
+    if (!m_mgr || !m_mgr->status() || !m_mgr->status()->isConnected()) return;
+    AgvStatusClient *st = m_mgr->status();
+    runWorker([this, st]() {
+        const QJsonObject resp = st->getRelocateStatus();
+        QMetaObject::invokeMethod(this, [this, resp]() {
+            if (resp.isEmpty() || resp.value("ret_code").toInt(0) != 0
+                || !resp.contains("reloc_status"))
+                return;
+            emit relocateStatusReceived(resp.value("reloc_status").toInt());
+        }, Qt::QueuedConnection);
+    });
 }
 
 void AgvTcpClient::requestMapData(const QString &mapName)
 {
-    if (!m_mgr) return;
-    QJsonObject resp = m_mgr->config()->getMap(mapName);
-    QVariantMap vm;
-    for (auto it = resp.constBegin(); it != resp.constEnd(); ++it)
-        vm.insert(it.key(), it.value().toVariant());
-    emit mapDataReceived(mapName, vm);
+    if (!m_mgr || !m_mgr->config() || !m_mgr->config()->isConnected()) return;
+    AgvConfigClient *cfg = m_mgr->config();
+    runWorker([this, cfg, mapName]() {
+        QJsonObject resp = cfg->getMap(mapName);
+        // 兼容地图数据包在 db 字段里的情况
+        if (!resp.contains("advancedPointList") && resp.value("db").isObject())
+            resp = resp.value("db").toObject();
+        QMetaObject::invokeMethod(this, [this, mapName, resp]() {
+            if (resp.isEmpty()) {
+                emit errorOccurred(QStringLiteral("下载地图 %1 失败").arg(mapName));
+                return;
+            }
+            emit mapDataReceived(mapName, resp.toVariantMap());
+        }, Qt::QueuedConnection);
+    });
 }
 
 // ===========================================================================
@@ -702,6 +1057,9 @@ bool AgvConnectionManager::connectAll(const QString &ip, const Ports &ports)
     m_status   = new AgvStatusClient  (ip, ports.status,  this);
     m_others   = new AgvOtherClient   (ip, ports.other,   this);
     m_config   = new AgvConfigClient  (ip, ports.config,  this);
+
+    // 子客户端已创建、尚未连接：此时挂信号才不会漏掉连接成功事件
+    emit clientsCreated();
 
     QStringList diag;
 
@@ -750,7 +1108,9 @@ void AgvConnectionManager::disconnectAll()
 
 bool AgvConnectionManager::isConnected() const
 {
-    return m_connected && m_pushback && m_pushback->isConnected();
+    // 以推送端口实际连接状态为准。之前还要求 m_connected（在 connectAll 末尾才置位），
+    // 导致 connectedChanged 触发时槽里读到 false，界面一直显示未连接。
+    return m_pushback && m_pushback->isConnected();
 }
 
 void AgvConnectionManager::setStateCallback(std::function<void(const QJsonObject &)> cb)

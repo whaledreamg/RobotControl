@@ -4,6 +4,8 @@
 #include <QObject>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QMutex>
+#include <QRecursiveMutex>
 #include <QStringList>
 #include <QVector>
 #include <functional>
@@ -26,7 +28,7 @@ constexpr int HAND_DOF_MAX_DEG[HAND_DOF_COUNT] = { 59, 90, 81, 81, 81, 81 };
 constexpr int HAND_DEFAULT_SLAVE_LEFT  = 126;
 constexpr int HAND_DEFAULT_SLAVE_RIGHT = 127;
 
-/// 默认 ec2rs485 通道名
+/// 默认 RS485 通信板从站名（实际 channel 由 rs485/list 解析）
 constexpr const char* HAND_DEFAULT_EC2RS_LEFT  = "EtherCAT485L";
 constexpr const char* HAND_DEFAULT_EC2RS_RIGHT = "EtherCAT485R";
 
@@ -146,7 +148,8 @@ public:
                              QObject *parent = nullptr);
     ~Revo2HandClient() override;
 
-    /// 初始化：gripper/setType(Generic485) + ec2rs485/init
+    /// 初始化：rs485/list 解析 channel + 释放夹爪占用 + rs485/init
+    /// （API 1.212.0 起 ec2rs485/* 迁为 rs485/*，gripper/setType 已删除）
     /// 返回 {ok, errStr}
     QPair<bool, QString> init(bool force = false);
 
@@ -169,37 +172,39 @@ public:
     QString readPositions();
 
     HandState state() const;
-    void registerStateCallback(std::function<void(const HandState &)> cb);
+    /// 注册状态回调，返回句柄（用于注销）
+    using StateCallback = std::function<void(const HandState &)>;
+    int registerStateCallback(StateCallback cb);
+    /// 注销状态回调（必须在回调所属对象销毁前调用）。
+    ///
+    /// 回调以裸 std::function 保存，若对象销毁后仍留在列表里，
+    /// 客户端下一次状态变化就会调用到已释放的对象 → 闪退。
+    /// Python 版靠 PySide Signal 在控件销毁时自动断开；C++ 需显式注销。
+    void unregisterStateCallback(int handle);
 
     // --- 供 UI（HandViewDialog 调试页）读取的内部参数 ---
-    QString ec2rsSlave() const  { return m_ec2rsSlave; }
-    int modbusAddr() const     { return m_modbusAddr; }
-    int txCount() const         { return m_txCount; }
-    int rxCount() const         { return m_rxCount; }
-    int errCount() const        { return m_errCount; }
+    QString ec2rsSlave() const;
+    int modbusAddr() const;
+    int txCount() const;
+    int rxCount() const;
+    int errCount() const;
 
     // --- 调试通道 ---
     /// 原始 Modbus 收发（读长度 <0 表示只发不读）
     QString rawExchange(const QByteArray &frame, int readLength);
-    /// 查询 ec2rs485 通道状态（ec2rs485/getStatus）
+    /// 查询 RS485 通道状态（rs485/getStatus）
     QJsonObject ec2rsGetStatus();
+    /// 把从站名解析为 rs485 channel 标识（rs485/list）。成功返回空串并写入 channel。
+    QString resolveChannel(QString *channel, bool force = false);
     /// 实时轮询间隔（ms），供 HandViewDialog 的「实时模式」开关切换
     void setPollInterval(int ms) { m_pollIntervalMs = ms; }
     int pollInterval() const   { return m_pollIntervalMs; }
 
     // --- 运行时改参数（ParamConfigTab「保存（立即生效）」）---
-    void setModbusAddr(int addr) {
-        if (m_modbusAddr != addr) resetInited();
-        m_modbusAddr = addr;
-        m_state.modbusAddr = addr;
-    }
-    void setEc2rsSlave(const QString &slave) {
-        if (m_ec2rsSlave != slave) resetInited();
-        m_ec2rsSlave = slave;
-        m_state.ec2rsSlave = slave;
-    }
+    void setModbusAddr(int addr);
+    void setEc2rsSlave(const QString &slave);
     /// 参数变化后清掉 init 标记，下次写/读时自动重新 init
-    void resetInited() { m_state.inited = false; }
+    void resetInited();
 
 signals:
     void stateChanged(const HandState &state);
@@ -207,16 +212,39 @@ signals:
 private:
     QByteArray ec2rsWriteRead(const QByteArray &data, int readLength);
     QString initChannel();
+    /// 通道被夹爪协议占用时，经 peripheral/setDeviceEnabled 停用本从站上的夹爪协议
+    QString releaseChannel(const QString &channel);
     void notifyState();
-
+    /// 通道是否已 init（线程安全读取）
+    bool isChannelInited() const;
+    /// 记录错误并计数（线程安全）
+    void setError(const QString &err);
     ArmWebSocket *m_ws = nullptr;
     QString m_side;
-    QString m_ec2rsSlave;
+    QString m_ec2rsSlave;           // 通信板从站名（用于定位 channel）
+    QString m_channel;              // rs485/list 解析出的 channel 标识
     int m_modbusAddr;
     int m_writeTimeMs = HAND_WRITE_TIME_MS_DEFAULT;
     int m_pollIntervalMs = 200;
     HandState m_state;
-    QVector<std::function<void(const HandState &)>> m_callbacks;
+    /// 保护 m_state / m_channel / m_txCount 等共享状态。
+    /// 微调写入走后台线程（QtConcurrent::run），同时 UI 线程会读状态，
+    /// 必须加锁否则读到撕裂值。递归锁：notifyState() 的回调里会再调 state()。
+    mutable QRecursiveMutex m_mutex;
+    /// 串行化同一路 RS485 通道上的「写 + 读」收发
+    /// （对应 Python _ecrs_write_read() 的 self._lock）。
+    ///
+    /// 锁在**调用方线程**获取，等待响应的过程也在调用方线程
+    /// （ArmWebSocket::sendAndWaitSafe 内部用条件变量），
+    /// socket 所属线程（主线程）全程空闲，因此不会阻塞 UI，也不会死锁。
+    QMutex m_ioMutex;
+    /// 状态回调表：{句柄, 回调}
+    struct StateCbEntry {
+        int handle;
+        std::function<void(const HandState &)> fn;
+    };
+    QVector<StateCbEntry> m_callbacks;
+    int m_nextCbHandle = 1;
     int m_txCount = 0, m_rxCount = 0, m_errCount = 0;
 };
 

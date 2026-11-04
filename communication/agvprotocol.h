@@ -46,6 +46,10 @@ public:
     static constexpr uint16_t CMD_GET_REMOTE_MAPS       = 1300;  // 获取地图列表
     static constexpr uint16_t CMD_GET_MAP               = 4011;  // 下载地图数据
 
+    // ===== 机器人配置（端口 19207）=====
+    static constexpr uint16_t CMD_CONFIG_LOCK           = 4005;  // 抢占控制权（robot_config_lock_req，响应 14005）
+    static constexpr uint16_t CMD_CONFIG_UNLOCK         = 4006;  // 释放控制权（robot_config_unlock_req，响应 14006）
+
     // ===== 其他功能 =====
     static constexpr uint16_t CMD_SET_DO                = 6001;  // 设置数字输出
     static constexpr uint16_t CMD_SET_SOFT_EMERGENCY    = 6004;  // 软急停

@@ -7,6 +7,8 @@
 #include <QJsonArray>
 #include <QHash>
 #include <QVariantList>
+#include <QMutex>
+#include <QWaitCondition>
 #include <QTimer>
 #include <functional>
 
@@ -60,9 +62,28 @@ public:
                             const QByteArray &jsonRaw,
                             int timeoutMs = 5000);
 
+    /// **线程安全**版同步调用，可在任意线程调用。
+    ///
+    /// sendAndWait() 内部跑嵌套事件循环，而 QWebSocket 的信号只在它所属
+    /// 线程派发，所以它只能在本对象线程调用——从别的线程直接调用会导致
+    /// 响应信号收不到，等待方必然超时（灵巧手 Modbus 收发曾因此全部失败）。
+    ///
+    /// 本接口把请求调度回本对象线程执行：
+    ///   - 已在该线程：直接调用 sendAndWait（无额外开销）
+    ///   - 在其他线程：用 BlockingQueuedConnection 排队过去执行并等结果
+    ///
+    /// 对应 Python 版 communication/arm_websocket.py：那边 WS 有独立的读线程
+    /// + 条件变量，跨线程 send_and_wait 天然安全。
+    QVariant sendAndWaitSafe(const QString &action,
+                              const QJsonObject &db = QJsonObject(),
+                              int timeoutMs = 5000);
     /// 注册推送 topic 回调（recv 时在本对象线程触发）
     void registerCallback(const QString &topic,
                           std::function<void(const QJsonObject &)> cb);
+
+    /// 诊断用：当前挂起的请求数。正常应随「响应到达 / 超时」及时归零；
+    /// 残留说明有等待者被遗弃（迟到响应会回调到已失效对象上）。
+    int pendingCount() const { return m_pending.size(); }
 
     // ===== 机械臂使能 =====
     /// 返回 {ok, errStr}（API 3.1 robot/enable、3.2 robot/disable）
@@ -119,6 +140,8 @@ signals:
     void projectListReceived(const QVariantList &projects);
     void speedReceived(double ratio);
     void errorOccurred(const QString &error);
+    /// robot/list 解析出的真实臂名（左、右），供 UI 校正显示
+    void armNamesResolved(const QString &left, const QString &right);
     /// 任意 topic 推送（升降柱 / 灵巧手等复用）
     void topicPushReceived(const QString &topic, const QJsonObject &db);
 
@@ -136,6 +159,10 @@ private:
     int  nextMsgId();
     /// 错误提取：err.message / err.code
     static QString errText(const QJsonObject &resp);
+    /// 用 robot/list 的真实臂名改写 m_leftArm / m_rightArm。
+    /// 文档 §2.1/§4.3：订阅主题必须用真实臂名，写错则整条订阅被拒（25004），
+    /// 此时连接正常但永远收不到推送。
+    void resolveArmNames();
 
     QWebSocket *m_socket = nullptr;
     bool m_connected = false;
@@ -147,6 +174,10 @@ private:
         std::function<void(const QVariant &)> cb;
     };
     QHash<int, Pending> m_pending;
+
+    /// 轮询重入保护：onPollTick 内部是阻塞式 sendAndWait，嵌套事件循环
+    /// 会让 1s 定时器在等待期间再次触发本槽，导致轮询递归堆积
+    bool m_polling = false;
 
     QHash<QString, std::function<void(const QJsonObject &)>> m_callbacks;
 

@@ -3,6 +3,7 @@
 #include "armwebsocket.h"
 
 #include <QDebug>
+#include <QJsonDocument>
 #include <QTimer>
 
 // ============================================================================
@@ -78,7 +79,15 @@ QVector<QJsonObject> LiftingColumnClient::listDevices()
                                     .arg(errorTextFromObj(resp.value("err").toObject()));
         return {};
     }
-    return jsonArrayToObjectVector(varToArr(resp.value("db")));
+    // 直接从 QJsonValue 取数组，不经 QVariant 中转（避免 QVariant 转换在不同 Qt 版本下取到空）
+    const QJsonArray arr = resp.value("db").toArray();
+    qInfo().noquote() << QStringLiteral("[liftingColumn] list -> %1 台").arg(arr.size());
+    if (arr.isEmpty()) {
+        // 空列表时把原始响应打出来，区分「控制器确实没配置」和「响应格式不对」
+        qWarning().noquote() << QStringLiteral("[liftingColumn] list 原始响应: %1")
+            .arg(QString::fromUtf8(QJsonDocument(resp).toJson(QJsonDocument::Compact)));
+    }
+    return jsonArrayToObjectVector(arr);
 }
 
 // ============================================================================
@@ -259,17 +268,22 @@ bool LiftingColumnClient::clearError(const QString &device)
 // ============================================================================
 bool LiftingColumnClient::moveTo(const QString &device, double heightM, double speedMps)
 {
-    if (!m_ws) return false;
+    m_lastError.clear();
+    if (!m_ws) { m_lastError = QStringLiteral("未连接"); return false; }
     QJsonObject db;
     db.insert("device", device);
     db.insert("height", heightM);
     if (speedMps > 0.0) db.insert("speed", speedMps);
     const QVariant r = m_ws->sendAndWait(QStringLiteral("liftingColumn/moveTo"), db, 3000);
-    if (!r.isValid()) return false;
+    if (!r.isValid()) {
+        m_lastError = QStringLiteral("无响应（超时）");
+        return false;
+    }
     const QJsonObject resp = varToObj(r);
     if (resp.contains("err")) {
+        m_lastError = errorTextFromObj(resp.value("err").toObject());
         qWarning().noquote() << QStringLiteral("[liftingColumn] moveTo(%1) 失败: %2")
-                                    .arg(device, errorTextFromObj(resp.value("err").toObject()));
+                                    .arg(device, m_lastError);
         return false;
     }
     return resp.value("db").toBool();
@@ -291,11 +305,13 @@ bool LiftingColumnClient::setZero(const QString &device)
 bool LiftingColumnClient::startJog(const QString &device, int direction,
                                   double speedMps, int timeoutMs)
 {
+    m_lastError.clear();
     if (direction != 1 && direction != -1) {
         qWarning().noquote() << QStringLiteral("[liftingColumn] startJog 方向非法: %1").arg(direction);
+        m_lastError = QStringLiteral("点动方向非法");
         return false;
     }
-    if (!m_ws) return false;
+    if (!m_ws) { m_lastError = QStringLiteral("未连接"); return false; }
 
     stopJogHeartbeat();
 
@@ -307,9 +323,15 @@ bool LiftingColumnClient::startJog(const QString &device, int direction,
 
     const QVariant r = m_ws->sendAndWait(QStringLiteral("liftingColumn/jogStart"), db, 3000);
     if (!r.isValid() || !varToObj(r).value("db").toBool()) {
-        if (r.isValid() && varToObj(r).contains("err"))
+        if (!r.isValid()) {
+            m_lastError = QStringLiteral("无响应（超时）");
+        } else if (varToObj(r).contains("err")) {
+            m_lastError = errorTextFromObj(varToObj(r).value("err").toObject());
             qWarning().noquote() << QStringLiteral("[liftingColumn] jogStart 失败: %1")
-                                        .arg(errorTextFromObj(varToObj(r).value("err").toObject()));
+                                        .arg(m_lastError);
+        } else {
+            m_lastError = QStringLiteral("控制器未接受点动");
+        }
         return false;
     }
 
@@ -382,7 +404,8 @@ bool LiftingColumnClient::isJogging() const
 bool LiftingColumnClient::simpleCall(const QString &action, const QString &device,
                                     const QJsonObject &extra, double timeout)
 {
-    if (!m_ws) return false;
+    m_lastError.clear();
+    if (!m_ws) { m_lastError = QStringLiteral("未连接"); return false; }
     QJsonObject db;
     db.insert("device", device);
     for (auto it = extra.constBegin(); it != extra.constEnd(); ++it)
@@ -390,12 +413,15 @@ bool LiftingColumnClient::simpleCall(const QString &action, const QString &devic
 
     const int timeoutMs = static_cast<int>(timeout * 1000);
     const QVariant r = m_ws->sendAndWait(action, db, timeoutMs);
-    if (!r.isValid()) return false;
+    if (!r.isValid()) {
+        m_lastError = QStringLiteral("无响应（超时）");
+        return false;
+    }
     const QJsonObject resp = varToObj(r);
     if (resp.contains("err")) {
+        m_lastError = errorTextFromObj(resp.value("err").toObject());
         qWarning().noquote() << QStringLiteral("[liftingColumn] %1(%2) 失败: %3")
-                                    .arg(action, device,
-                                         errorTextFromObj(resp.value("err").toObject()));
+                                    .arg(action, device, m_lastError);
         return false;
     }
     return resp.value("db").toBool();

@@ -74,6 +74,9 @@ public:
     /// 是否正在点动中
     bool isJogging() const;
 
+    /// 最近一次调用失败的原因（成功时为空）。供 UI 弹出具体提示。
+    QString lastError() const { return m_lastError; }
+
     // ===== 错误码映射 =====
     static QString errorText(int code);
     static QString errorTextFromObj(const QJsonObject &errObj);
@@ -94,6 +97,7 @@ private:
     void startJogHeartbeat(const QString &device, int timeoutMs);
 
     ArmWebSocket *m_ws = nullptr;
+    QString m_lastError;
 
     // 点动心跳状态
     QString m_jogDevice;

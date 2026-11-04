@@ -21,16 +21,20 @@
 #endif
 
 #include <QCloseEvent>
+#include <QIcon>
 #include <QStatusBar>
 #include <QGroupBox>
 #include <QLabel>
 #include <QPushButton>
 #include <QComboBox>
 #include <QSlider>
+#include <QScrollArea>
 #include <QSpinBox>
 #include <QDoubleSpinBox>
 #include <QLineEdit>
 #include <QStyle>
+#include <QDebug>
+#include <QPointer>
 #include <QTimer>
 #include <QDateTime>
 #include <QVariantList>
@@ -39,6 +43,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QThread>
+#include <QThreadPool>
 #include <QVector>
 #include <cmath>
 
@@ -48,6 +53,25 @@ MainWindow::MainWindow(QWidget *parent)
 {
     ui->setupUi(this);
     QssManager::instance()->loadStyleForWidget(this, QStringLiteral("mainwindow"));
+
+    // 左上角 logo：用图标替换原来的 emoji 文字
+    // 按设备像素比缩放源图（96px），高分屏 / 手机屏不发虚
+    {
+        const QPixmap src(QStringLiteral(":/resources/icons/robot.png"));
+        const qreal dpr = devicePixelRatioF();
+        const int logical = 28;
+        QPixmap logo = src.scaled(QSize(qRound(logical * dpr), qRound(logical * dpr)),
+                                  Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        logo.setDevicePixelRatio(dpr);
+        ui->lblLogo->setPixmap(logo);
+        setWindowIcon(QIcon(src));
+    }
+
+    // 左(AGV) / 中(机械臂) / 右(灵巧手+升降柱) 三列等分：
+    // 外层分割器 1:2，右侧面板内部两列再 1:1
+    ui->mainSplitter->setStretchFactor(0, 1);
+    ui->mainSplitter->setStretchFactor(1, 2);
+    ui->mainSplitter->setSizes({1000, 2000});
 
     setupCommunication();
     connectSignals();
@@ -68,10 +92,6 @@ MainWindow::MainWindow(QWidget *parent)
     ui->sliderArmSpeed->setValue(initArmSpeed);
     ui->lblArmSpeedVal->setText(QStringLiteral("%1%").arg(initArmSpeed));
     updateSpeedHint(initArmSpeed);
-
-    // 夹爪力度
-    ui->sliderGripperForce->setValue(s->defaultGripperForce());
-    ui->lblGripperForceVal->setText(QStringLiteral("%1%").arg(s->defaultGripperForce()));
 
     // 升降柱默认目标高度（mm）
     ui->spinLiftTarget->setValue(s->liftingTargetHeightMm());
@@ -108,7 +128,6 @@ void MainWindow::closeEvent(QCloseEvent *event)
     s->setWindowPos(pos());
     s->setArmIp(ui->editArmIp->text().trimmed());
     s->setAgvIp(ui->editAgvIp->text().trimmed());
-    s->setDefaultGripperForce(ui->sliderGripperForce->value());
     s->setArmSpeed(ui->sliderArmSpeed->value() / 100.0);
     s->saveSettings();
 
@@ -139,12 +158,20 @@ void MainWindow::setupHandPanel()
     if (!m_handPanel) {
         QGroupBox *handBox = findChild<QGroupBox*>(QStringLiteral("handGroup"));
         if (!handBox) return;
-        m_handPanel = new DualHandPanel(handBox);
-        m_handPanel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
+        // 灵巧手模块与升降柱上下 1:1 等分，内容超出时在模块内部滚动
+        auto *handScroll = new QScrollArea(handBox);
+        handScroll->setObjectName(QStringLiteral("handScroll"));
+        handScroll->setFrameShape(QFrame::NoFrame);
+        handScroll->setWidgetResizable(true);
+        handScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+        handScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+
+        m_handPanel = new DualHandPanel(handScroll);
+        handScroll->setWidget(m_handPanel);
+
         if (auto *lay = qobject_cast<QVBoxLayout*>(handBox->layout())) {
-            lay->addWidget(m_handPanel);
+            lay->addWidget(handScroll);
         }
-        handBox->setMaximumHeight(280);
     }
 
     connect(m_handPanel, &DualHandPanel::initRequested,
@@ -161,32 +188,78 @@ void MainWindow::setupHandPanel()
 
 void MainWindow::initLiftingColumn()
 {
-    if (!m_leftArm || m_lifting) return;
-    m_lifting = new LiftingColumnClient(m_leftArm, this);
+    if (!m_leftArm) return;
+    // 客户端只创建一次；断开重连后仍要重新订阅并重新拉列表
+    if (!m_lifting)
+        m_lifting = new LiftingColumnClient(m_leftArm, this);
 
     auto cb = [this](const QVector<QJsonObject> &states) {
         for (const QJsonObject &st : states) {
-            const QString dev = st.value(QStringLiteral("deviceName")).toString();
-            const double h = st.value(QStringLiteral("currentPosition")).toDouble();
-            if (!dev.isEmpty()) {
-                ui->lblLiftHeight->setText(
-                    QStringLiteral("%1 mm").arg(h * 1000.0, 0, 'f', 1));
+            // 字段名以 API 文档 34.5 为准：设备名 name，当前高度 height（m）
+            const QString dev = st.value(QStringLiteral("name")).toString();
+            if (dev.isEmpty()) continue;
+
+            // 与 Python update_state 一致：list 没拿到时，推送里出现的设备也补进下拉框
+            if (ui->cmbLiftDevices->findText(dev) < 0) {
+                const bool wasEmpty = ui->cmbLiftDevices->count() == 0;
+                ui->cmbLiftDevices->addItem(dev);
+                if (wasEmpty) ui->cmbLiftDevices->setCurrentIndex(0);
             }
+            m_liftStates.insert(dev, st);
         }
+        // 在线 / 使能 / 运动 / 故障 / 急停 一并刷新，不只是高度
+        refreshLiftLabels();
     };
+
+    // 与 Python _init_lifting_column 一致：先拉 list，再订阅
+    refreshLiftDevices();
     m_lifting->subscribeState(cb, SettingsManager::instance()->pushInterval());
 
-    QVector<QJsonObject> devs = m_lifting->listDevices();
+    // 控制器刚握手时，升降柱所属主站可能还没起来（文档 34.1 最长等 6 s），
+    // list 会返回空数组。Python 版在 3 s / 8 s 各补拉一次，这里保持一致。
+    for (int delayMs : {3000, 8000}) {
+        QTimer::singleShot(delayMs, this, [this]() {
+            if (m_leftArm && m_leftArm->isConnected())
+                refreshLiftDevices();
+        });
+    }
+}
+
+void MainWindow::refreshLiftDevices()
+{
+    if (!m_lifting) return;
+
+    // liftingColumn/list 返回的设备名字段是 name（API 文档 34.4），原样显示，不做改写
+    const QVector<QJsonObject> devs = m_lifting->listDevices();
     QStringList names;
     for (const QJsonObject &d : devs) {
-        const QString n = d.value(QStringLiteral("deviceName")).toString();
+        const QString n = d.value(QStringLiteral("name")).toString();
         if (!n.isEmpty()) names << n;
     }
-    if (!names.isEmpty()) {
-        m_lifting->setKnownDevices(names);
-        ui->cmbLiftDevices->clear();
-        ui->cmbLiftDevices->addItems(names);
+    if (names.isEmpty()) {
+        qWarning().noquote() << QStringLiteral("[Main] liftingColumn/list 返回 0 台，等待重试或推送补全");
+        statusBar()->showMessage(QStringLiteral("未获取到升降柱设备（详见日志 [liftingColumn]）"), 3000);
+        return;
     }
+
+    // 记下每台的软限位 / 速度上限，供目标高度范围和限位显示使用
+    m_liftDevInfo.clear();
+    for (const QJsonObject &d : devs) {
+        const QString n = d.value(QStringLiteral("name")).toString();
+        if (!n.isEmpty()) m_liftDevInfo.insert(n, d);
+    }
+
+    m_lifting->setKnownDevices(names);
+
+    const QString prev = ui->cmbLiftDevices->currentText();
+    ui->cmbLiftDevices->blockSignals(true);
+    ui->cmbLiftDevices->clear();
+    ui->cmbLiftDevices->addItems(names);
+    const int idx = ui->cmbLiftDevices->findText(prev);
+    ui->cmbLiftDevices->setCurrentIndex(idx >= 0 ? idx : 0);
+    ui->cmbLiftDevices->blockSignals(false);
+    // 限位信息每次刷新都要应用（同一台设备的限位也可能变了，如 setZero 之后）
+    onLiftDeviceChanged(ui->cmbLiftDevices->currentText());
 }
 
 void MainWindow::connectSignals()
@@ -203,6 +276,8 @@ void MainWindow::connectSignals()
     connect(m_agvClient, &AgvTcpClient::errorOccurred,        this, &MainWindow::onAgvError);
     connect(m_agvClient, &AgvTcpClient::mapListReceived,     this, &MainWindow::onAgvMapListReceived);
     connect(m_agvClient, &AgvTcpClient::mapDataReceived,     this, &MainWindow::onAgvMapDataReceived);
+    connect(m_agvClient, &AgvTcpClient::navStatusReceived,   this, &MainWindow::onAgvNavStatus);
+    connect(m_agvClient, &AgvTcpClient::lasersReceived,      this, &MainWindow::onAgvLasers);
 
     // ===== AGV 遥控 =====
     connect(ui->btnAgvForward,  &QPushButton::pressed,  this, &MainWindow::onAgvForwardPressed);
@@ -219,6 +294,11 @@ void MainWindow::connectSignals()
     connect(ui->btnAgvNavStart, &QPushButton::clicked,  this, &MainWindow::onAgvNavStartClicked);
     connect(ui->btnAgvNavPause, &QPushButton::clicked,  this, &MainWindow::onAgvNavPauseClicked);
     connect(ui->btnAgvNavCancel,&QPushButton::clicked,  this, &MainWindow::onAgvNavCancelClicked);
+    // 控制权（抢占 / 释放），结果由 AgvTcpClient 信号回传
+    connect(ui->btnAgvLock,     &QPushButton::clicked,  this, &MainWindow::onAgvLockClicked);
+    connect(ui->btnAgvUnlock,   &QPushButton::clicked,  this, &MainWindow::onAgvUnlockClicked);
+    connect(m_agvClient, &AgvTcpClient::controlLockResult,   this, &MainWindow::onAgvLockResult);
+    connect(m_agvClient, &AgvTcpClient::controlUnlockResult, this, &MainWindow::onAgvUnlockResult);
     connect(ui->btnViewMap,     &QPushButton::clicked,  this, &MainWindow::onAgvViewMapClicked);
     connect(ui->cmbAgvStations, &QComboBox::currentTextChanged,
             this, &MainWindow::onAgvStationChanged);
@@ -232,6 +312,8 @@ void MainWindow::connectSignals()
 
     connect(ui->btnLeftArmEnable,  &QPushButton::toggled, this, &MainWindow::onLeftArmEnableClicked);
     connect(ui->btnRightArmEnable, &QPushButton::toggled, this, &MainWindow::onRightArmEnableClicked);
+    connect(ui->btnLeftArmDrag,    &QPushButton::clicked, this, &MainWindow::onLeftArmDragClicked);
+    connect(ui->btnRightArmDrag,   &QPushButton::clicked, this, &MainWindow::onRightArmDragClicked);
     connect(ui->sliderArmSpeed,    &QSlider::valueChanged,this, &MainWindow::onArmSpeedChanged);
     connect(ui->btnArmRefresh,     &QPushButton::clicked, this, &MainWindow::onArmRefreshClicked);
     connect(ui->btnArmView,        &QPushButton::clicked, this, &MainWindow::onArmViewClicked);
@@ -239,30 +321,6 @@ void MainWindow::connectSignals()
     connect(ui->btnArmProjectPause, &QPushButton::clicked, this, &MainWindow::onArmProjectPauseClicked);
     connect(ui->btnArmProjectResume,&QPushButton::clicked, this, &MainWindow::onArmProjectResumeClicked);
     connect(ui->btnArmProjectStop,  &QPushButton::clicked, this, &MainWindow::onArmProjectStopClicked);
-
-    // ===== 夹爪 (占位: 通过 statusBar 显示提示) =====
-    auto gripperOpen = [this]() {
-        statusBar()->showMessage(QStringLiteral("夹爪: 打开"), 2000);
-    };
-    auto gripperClose = [this]() {
-        const int f = ui->sliderGripperForce->value();
-        statusBar()->showMessage(QStringLiteral("夹爪: 闭合 (%1%)").arg(f), 2000);
-    };
-    auto gripperStop = [this]() {
-        statusBar()->showMessage(QStringLiteral("夹爪: 停止"), 2000);
-        updateGripperStatus(QStringLiteral("■ 停止"));
-    };
-    connect(ui->btnGripperOpen,  &QPushButton::clicked, this, [gripperOpen, this]() {
-        gripperOpen(); updateGripperStatus(QStringLiteral("→ 打开中…"));
-    });
-    connect(ui->btnGripperClose, &QPushButton::clicked, this, [gripperClose, this]() {
-        gripperClose();
-        updateGripperStatus(QStringLiteral("→ 闭合中 (%1%)").arg(ui->sliderGripperForce->value()));
-    });
-    connect(ui->btnGripperStop,  &QPushButton::clicked, this, gripperStop);
-    connect(ui->sliderGripperForce, &QSlider::valueChanged, this, [this](int v) {
-        ui->lblGripperForceVal->setText(QStringLiteral("%1%").arg(v));
-    });
 
     // ===== 升降柱 =====
     connect(ui->btnLiftRefresh,     &QPushButton::clicked,  this, &MainWindow::onLiftRefreshClicked);
@@ -275,7 +333,6 @@ void MainWindow::connectSignals()
     connect(ui->btnLiftJogUp,       &QPushButton::released, this, &MainWindow::onLiftJogUpReleased);
     connect(ui->btnLiftJogDown,     &QPushButton::pressed,  this, &MainWindow::onLiftJogDownPressed);
     connect(ui->btnLiftJogDown,     &QPushButton::released, this, &MainWindow::onLiftJogDownReleased);
-    connect(ui->btnLiftSetZero,     &QPushButton::clicked,  this, &MainWindow::onLiftSetZeroClicked);
     connect(ui->cmbLiftDevices,     &QComboBox::currentTextChanged,
             this, &MainWindow::onLiftDeviceChanged);
 }
@@ -397,11 +454,36 @@ void MainWindow::onAgvCtrlConnected(bool)
     applyConnectionState();
 }
 
-void MainWindow::onAgvPushConnected(bool)
+void MainWindow::onAgvPushConnected(bool connected)
 {
-    m_agvConnected = m_agvClient->isConnected();
+    m_agvConnected = connected && m_agvClient->isConnected();
     updateConnectionStatusUi();
     applyConnectionState();
+    if (!connected) {
+        ui->lblAgvState->setText(QStringLiteral("● 未连接"));
+        m_navStatus = QStringLiteral("idle");
+    }
+}
+
+void MainWindow::onAgvNavStatus(int taskStatus)
+{
+    static const QHash<int, QString> names = {
+        {0, QStringLiteral("无任务")}, {1, QStringLiteral("等待中")},
+        {2, QStringLiteral("运行中")}, {3, QStringLiteral("已暂停")},
+        {4, QStringLiteral("已完成")}, {5, QStringLiteral("失败")},
+        {6, QStringLiteral("已取消")},
+    };
+    ui->lblAgvState->setText(QStringLiteral("● %1")
+                                 .arg(names.value(taskStatus, QStringLiteral("未知"))));
+    if (taskStatus == 2)      updateNavButtons(QStringLiteral("running"));
+    else if (taskStatus == 3) updateNavButtons(QStringLiteral("paused"));
+    else                      updateNavButtons(QStringLiteral("idle"));
+}
+
+void MainWindow::onAgvLasers(const QVariantList &lasers)
+{
+    if (m_mapDialog && m_mapDialog->isVisible())
+        m_mapDialog->updateLasers(lasers);
 }
 
 void MainWindow::onAgvError(const QString &err)
@@ -482,6 +564,59 @@ void MainWindow::setAgvEmergencyUi(bool active)
     b->style()->polish(b);
 }
 
+void MainWindow::onAgvLockClicked()
+{
+    if (!m_agvClient) return;
+    const QString nick = ui->editAgvLockNick->text().trimmed();
+    if (nick.isEmpty()) {
+        if (m_messageManager) m_messageManager->warning(QStringLiteral("请先填写抢占者名称"));
+        ui->editAgvLockNick->setFocus();
+        return;
+    }
+    // 不再二次确认：Android 上模态 QMessageBox 无法点击确认/关闭
+    ui->btnAgvLock->setEnabled(false);
+    statusBar()->showMessage(QStringLiteral("正在抢占控制权..."));
+    m_agvClient->lockControl(nick);
+}
+
+void MainWindow::onAgvLockResult(bool ok, const QString &msg)
+{
+    // 按钮使能统一由 applyConnectionState 维护（断线时不应被重新启用）
+    ui->btnAgvLock->setEnabled(m_agvConnected);
+    if (ok) {
+        ui->lblAgvLockState->setText(
+            QStringLiteral("控制权: 已抢占（%1）").arg(ui->editAgvLockNick->text().trimmed()));
+        statusBar()->showMessage(QStringLiteral("已抢占控制权"), 3000);
+    } else {
+        ui->lblAgvLockState->setText(QStringLiteral("控制权: 抢占失败"));
+        const QString text = QStringLiteral("抢占控制权失败：%1").arg(msg);
+        statusBar()->showMessage(text, 5000);
+        if (m_messageManager) m_messageManager->error(text);
+    }
+}
+
+void MainWindow::onAgvUnlockClicked()
+{
+    if (!m_agvClient) return;
+    ui->btnAgvUnlock->setEnabled(false);
+    statusBar()->showMessage(QStringLiteral("正在释放控制权..."));
+    m_agvClient->unlockControl();
+}
+
+void MainWindow::onAgvUnlockResult(bool ok, const QString &msg)
+{
+    ui->btnAgvUnlock->setEnabled(m_agvConnected);
+    if (ok) {
+        ui->lblAgvLockState->setText(QStringLiteral("控制权: 已释放"));
+        statusBar()->showMessage(QStringLiteral("已释放控制权"), 3000);
+    } else {
+        // 失败不改标签：最常见原因是控制权不在自己手里（只能释放自己抢占的）
+        const QString text = QStringLiteral("释放控制权失败：%1（只能释放自己抢占的控制权）").arg(msg);
+        statusBar()->showMessage(text, 5000);
+        if (m_messageManager) m_messageManager->error(text);
+    }
+}
+
 void MainWindow::onAgvNavStartClicked()
 {
     if (!m_agvClient) return;
@@ -510,6 +645,43 @@ void MainWindow::onAgvViewMapClicked()
     if (!m_mapDialog) {
         m_mapDialog = new MapInfoDialog(this);
         connect(m_mapDialog, &MapInfoDialog::refreshClicked, this, &MainWindow::onRefreshMap);
+        connect(m_mapDialog, &MapInfoDialog::switchMapRequested,
+                this, &MainWindow::onMapSwitchRequested);
+        connect(m_mapDialog, &MapInfoDialog::relocateRequested,
+                this, &MainWindow::onRelocateRequested);
+        connect(m_mapDialog, &MapInfoDialog::confirmLocationRequested,
+                m_agvClient, &AgvTcpClient::confirmLocation);
+        // AGV 侧结果回填到弹窗（弹窗是 this 的子对象，随主窗口销毁）
+        connect(m_agvClient, &AgvTcpClient::mapSwitched, m_mapDialog,
+                &MapInfoDialog::setSwitchMapResult);
+        connect(m_agvClient, &AgvTcpClient::relocateFinished, m_mapDialog,
+                &MapInfoDialog::setRelocateResult);
+        connect(m_agvClient, &AgvTcpClient::locationConfirmed, m_mapDialog,
+                &MapInfoDialog::setConfirmResult);
+        connect(m_agvClient, &AgvTcpClient::relocateStatusReceived,
+                this, &MainWindow::onRelocateStatus);
+
+        // 切图成功后重新拉列表：带回新的 current_map，并自动下载新地图数据
+        connect(m_agvClient, &AgvTcpClient::mapSwitched, this,
+                [this](bool ok, const QString &, const QString &) {
+            if (ok) m_agvClient->requestMapList();
+        });
+
+        // 重定位指令被 AGV 接受后才开始轮询状态，避免读到上一次的旧结果
+        m_relocTimer = new QTimer(this);
+        m_relocTimer->setInterval(1000);
+        connect(m_relocTimer, &QTimer::timeout,
+                m_agvClient, &AgvTcpClient::requestRelocateStatus);
+        connect(m_agvClient, &AgvTcpClient::relocateFinished, this,
+                [this](bool ok, const QString &) {
+            if (ok) m_relocTimer->start(); else m_relocTimer->stop();
+        });
+
+        // 弹窗显示时才轮询激光，关闭即停
+        connect(m_mapDialog, &QDialog::finished, this, [this]() {
+            m_agvClient->setLaserPolling(false);
+            m_relocTimer->stop();
+        });
 
         // 如果已有地图数据，先设置
         if (!m_mapList.isEmpty() || !m_currentMapData.isEmpty()) {
@@ -522,11 +694,35 @@ void MainWindow::onAgvViewMapClicked()
     m_mapDialog->show();
     m_mapDialog->raise();
     m_mapDialog->activateWindow();
+    m_agvClient->setLaserPolling(true);
+    // 已有最新位姿时立刻画出来
+    const AgvState st = m_agvClient->lastState();
+    m_mapDialog->updateAgvPose(st.x, st.y, qRadiansToDegrees(st.theta));
 }
 
 void MainWindow::onRefreshMap()
 {
     m_agvClient->requestMapList();
+}
+
+void MainWindow::onMapSwitchRequested(const QString &mapName)
+{
+    // 结果走 mapSwitched 信号：弹窗显示结果，MainWindow 在成功后刷新地图
+    m_agvClient->switchMap(mapName);
+}
+
+void MainWindow::onRelocateRequested(double x, double y, double angleRad, bool home)
+{
+    m_agvClient->relocate(x, y, angleRad, home);
+}
+
+void MainWindow::onRelocateStatus(int status)
+{
+    if (m_mapDialog)
+        m_mapDialog->setRelocateStatus(status);
+    // 0 失败 / 1 成功 / 3 完成待确认：流程结束，停止轮询（2 = 重定位中，继续）
+    if (status != 2)
+        m_relocTimer->stop();
 }
 
 void MainWindow::onAgvMapListReceived(const QVariantList &maps, const QString &currentMap)
@@ -535,14 +731,8 @@ void MainWindow::onAgvMapListReceived(const QVariantList &maps, const QString &c
     m_currentMapName = currentMap;
     m_mapList = maps;
     
-    // 更新 UI
-    if (ui->cmbAgvStations) {
-        ui->cmbAgvStations->clear();
-        for (const QVariant &m : maps) {
-            ui->cmbAgvStations->addItem(m.toString());
-        }
-    }
-    
+    // 站点下拉框由地图数据（advancedPointList）填充，见 onAgvMapDataReceived
+
     // 请求地图数据
     if (!currentMap.isEmpty()) {
         m_agvClient->requestMapData(currentMap);
@@ -558,7 +748,30 @@ void MainWindow::onAgvMapDataReceived(const QString &mapName, const QVariantMap 
 {
     m_currentMapName = mapName;
     m_currentMapData = mapData;
-    
+
+    // 导航站点：与 Python _load_agv_stations 一致，取 advancedPointList 的 instanceName
+    QVariantList points = mapData.value(QStringLiteral("advancedPointList")).toList();
+    if (points.isEmpty())
+        points = mapData.value(QStringLiteral("advanced_point_list")).toList();
+    if (points.isEmpty())
+        points = mapData.value(QStringLiteral("points")).toList();
+
+    const QString prev = ui->cmbAgvStations->currentText();
+    ui->cmbAgvStations->blockSignals(true);
+    ui->cmbAgvStations->clear();
+    for (const QVariant &pv : std::as_const(points)) {
+        const QVariantMap p = pv.toMap();
+        QString name = p.value(QStringLiteral("instanceName")).toString();
+        if (name.isEmpty()) name = p.value(QStringLiteral("instance_name")).toString();
+        if (name.isEmpty()) name = p.value(QStringLiteral("name")).toString();
+        if (name.isEmpty()) name = p.value(QStringLiteral("className")).toString();
+        if (name.isEmpty()) continue;
+        ui->cmbAgvStations->addItem(name, name);
+    }
+    const int idx = ui->cmbAgvStations->findText(prev);
+    if (idx >= 0) ui->cmbAgvStations->setCurrentIndex(idx);
+    ui->cmbAgvStations->blockSignals(false);
+
     // 如果地图弹窗已打开，更新它
     if (m_mapDialog) {
         m_mapDialog->setData(m_mapList, mapName, mapData);
@@ -604,12 +817,15 @@ void MainWindow::onArmRobotStatus(const QString &armName, const QJsonObject &db)
     const bool isLeft = (armName == s->leftArmName());
 
     const bool enabled = db.value(QStringLiteral("enabled")).toBool();
+    const bool dragging = ArmWebSocket::isDragMode(db.value(QStringLiteral("mode")).toString());
     if (isLeft) {
         m_lastLeftArmState = db;
         updateArmEnableButton(true, enabled);
+        updateArmDragButton(true, dragging);
     } else {
         m_lastRightArmState = db;
         updateArmEnableButton(false, enabled);
+        updateArmDragButton(false, dragging);
     }
     updateArmStateUi(armName, db);
 }
@@ -760,6 +976,89 @@ void MainWindow::updateArmEnableButton(bool left, bool enabled)
     }
 }
 
+void MainWindow::onLeftArmDragClicked()  { toggleArmDrag(true);  }
+void MainWindow::onRightArmDragClicked() { toggleArmDrag(false); }
+
+// 拖动模式只能退到 Disabled，所以「退出拖动」= robot/disable；
+// 「进入拖动」= robot/drag，成功后不直接改按钮，等 robot/status 推送 mode 回灌，
+// 这样界面始终和真机状态一致。
+void MainWindow::toggleArmDrag(bool left)
+{
+    if (!m_leftArm) return;
+    bool &busy = left ? m_leftArmDragBusy : m_rightArmDragBusy;
+    if (busy) return;
+
+    auto *s = SettingsManager::instance();
+    const QString armName = left ? s->leftArmName() : s->rightArmName();
+    const QString sideTxt = left ? QStringLiteral("左臂") : QStringLiteral("右臂");
+    QPushButton *btn = left ? ui->btnLeftArmDrag : ui->btnRightArmDrag;
+    const bool dragging = left ? m_leftArmDragging : m_rightArmDragging;
+
+    busy = true;
+    btn->setEnabled(false);
+
+    if (dragging) {
+        // 退出：下电（控制器会先走约 100ms 力矩斜坡再进入 Disabled）
+        btn->setText(QStringLiteral("退出中…"));
+        const auto [ok, err] = m_leftArm->setArmEnabled(armName, false);
+        busy = false;
+        btn->setEnabled(m_armConnected);
+        if (!ok) {
+            updateArmDragButton(left, true);   // 回滚文案
+            statusBar()->showMessage(QStringLiteral("⚠ %1 退出拖动失败: %2").arg(sideTxt, err), 5000);
+            if (m_messageManager) m_messageManager->error(
+                QStringLiteral("%1退出拖动失败: %2").arg(sideTxt, err));
+            return;
+        }
+        statusBar()->showMessage(QStringLiteral("%1已退出拖动并下电").arg(sideTxt), 3000);
+        return;
+    }
+
+    // 进入拖动：请求最长等 8 s，期间按钮置灰防止重复点击
+    btn->setText(QStringLiteral("进入中…"));
+    QPointer<MainWindow> self(this);
+    m_leftArm->dragArmAsync(armName, [self, left, armName, sideTxt](bool ok, const QString &err) {
+        if (!self) return;
+        bool &busyRef = left ? self->m_leftArmDragBusy : self->m_rightArmDragBusy;
+        busyRef = false;
+        QPushButton *b = left ? self->ui->btnLeftArmDrag : self->ui->btnRightArmDrag;
+        b->setEnabled(self->m_armConnected);
+        // 文案先恢复成当前真机状态；成功时 robot/status 推送会随后改成「退出拖动」
+        self->updateArmDragButton(left, left ? self->m_leftArmDragging : self->m_rightArmDragging);
+        if (ok) {
+            b->setToolTip(QStringLiteral("进入力矩拖动（robot/drag）"));
+            self->statusBar()->showMessage(
+                QStringLiteral("✓ %1 进入力矩拖动模式，可手扶机械臂示教").arg(sideTxt), 3000);
+            if (self->m_messageManager) self->m_messageManager->success(
+                QStringLiteral("%1已进入拖动模式").arg(sideTxt));
+        } else {
+            b->setToolTip(QStringLiteral("上次拖动失败: %1").arg(err));
+            self->statusBar()->showMessage(
+                QStringLiteral("⚠ %1 进入拖动失败: %2").arg(sideTxt, err), 5000);
+            if (self->m_messageManager) self->m_messageManager->error(
+                QStringLiteral("%1进入拖动失败: %2").arg(sideTxt, err));
+        }
+    });
+}
+
+void MainWindow::updateArmDragButton(bool left, bool dragging)
+{
+    (left ? m_leftArmDragging : m_rightArmDragging) = dragging;
+    const bool busy = left ? m_leftArmDragBusy : m_rightArmDragBusy;
+    if (busy) return;   // 请求进行中由 toggleArmDrag 管文案
+
+    QPushButton *btn = left ? ui->btnLeftArmDrag : ui->btnRightArmDrag;
+    btn->setText(dragging ? QStringLiteral("退出拖动") : QStringLiteral("拖动"));
+    btn->setToolTip(dragging
+        ? QStringLiteral("拖动中：手扶机械臂即可示教。\n点此退出拖动并下电（robot/disable）。")
+        : QStringLiteral("进入力矩拖动（robot/drag）；\n按机型自动派到 CSTDrag / ServoDrag。\n再点一次退出（= 下电）。"));
+    // 拖动中用黄色实心醒目提示；待机时清掉控件级样式，回到全局 QSS
+    btn->setStyleSheet(dragging
+        ? QStringLiteral("QPushButton{background:#F9C74F;color:#5A3D00;font-weight:bold;}"
+                         "QPushButton:disabled{background:#E0E0E0;color:#999;}")
+        : QString());
+}
+
 void MainWindow::onArmSpeedChanged(int v)
 {
     ui->lblArmSpeedVal->setText(QStringLiteral("%1%").arg(v));
@@ -791,7 +1090,10 @@ void MainWindow::onArmViewClicked()
     // 机械臂 Web 界面 URL
     // 桌面用 QtWebEngine，Android 用 Qt WebView；iOS / WASM 未适配。
 #if !defined(Q_OS_IOS) && !defined(Q_OS_WASM)
+    // 地址来自设置页（默认 DEFAULT_ARM_WEB_URL）；设置被修改后再次打开时重新加载
     static WebViewDialog *dlg = nullptr;
+    static QString loadedUrl;
+    const QString url = SettingsManager::instance()->armWebUrl();
     if (!dlg) {
         dlg = new WebViewDialog(url, QStringLiteral("机械臂 Web"), this);
         loadedUrl = url;
@@ -867,17 +1169,25 @@ void MainWindow::onHandInit()
         btn->setText(QStringLiteral("初始化中…"));
     }
 
-    // init() 内部走 sendAndWait（阻塞式），放后台线程避免卡 UI
+    // Revo2HandClient::init() 内部是一串同步 RS485 事务（rs485/list、
+    // peripheral/*、rs485/init），累计可能要好几秒。放在主线程执行会把
+    // 界面完全冻住，所以移到线程池。
+    //
+    // 安全性：init() 走 ArmWebSocket::sendAndWaitSafe()，该接口现在在
+    // **调用方线程**用条件变量等待，只把「发送」这一步排回 socket 线程，
+    // socket 线程全程空闲，因此从工作线程调用是安全的。
     auto *mgr  = m_handManager;
-    auto *self = this;
-    QThread::create([mgr, self, btn]() {
+    QPointer<MainWindow> self(this);
+    QThreadPool::globalInstance()->start([mgr, self, btn]() {
         const auto r      = mgr->init();
         const bool leftOk = r.first.first;
         const QString leftErr  = r.first.second;
         const bool rightOk = r.second.first;
         const QString rightErr = r.second.second;
 
-        QMetaObject::invokeMethod(self, [self, leftOk, rightOk, leftErr, rightErr, btn]() {
+        if (!self) return;
+        QMetaObject::invokeMethod(self, [self, btn, leftOk, leftErr,
+                                         rightOk, rightErr]() {
             if (btn) {
                 btn->setEnabled(true);
                 btn->setText(QStringLiteral("重新连接"));
@@ -897,7 +1207,7 @@ void MainWindow::onHandInit()
                 self->m_messageManager->error(
                     QStringLiteral("灵巧手初始化失败: ") + detail);
         }, Qt::QueuedConnection);
-    })->start();
+    });
 }
 
 void MainWindow::onHandViewRequested(const QString &side)
@@ -929,12 +1239,19 @@ void MainWindow::onHandGrabRequested(const QString &side)
                     .arg(side == QStringLiteral("left") ? QStringLiteral("左") : QStringLiteral("右")));
         return;
     }
-    QString err = client->executePreset(QStringLiteral("grab"));
-    if (err.isEmpty()) {
-        if (m_messageManager) m_messageManager->success(QStringLiteral("抓取手势已下发"));
-    } else {
-        if (m_messageManager) m_messageManager->error(err);
-    }
+    // 写入走 RS485 同步事务，最长可达数秒，不能占用主线程（否则界面卡住）。
+    // sendAndWaitSafe() 在调用方线程等待，socket 线程保持空闲，因此安全。
+    QPointer<MainWindow> self(this);
+    auto *mm = m_messageManager;
+    QThreadPool::globalInstance()->start([client, self, mm]() {
+        const QString err = client->executePreset(QStringLiteral("一把抓"));
+        if (!self) return;
+        QMetaObject::invokeMethod(self, [self, mm, err]() {
+            if (!mm) return;
+            if (err.isEmpty()) mm->success(QStringLiteral("抓取手势已下发"));
+            else               mm->error(err);
+        }, Qt::QueuedConnection);
+    });
 }
 
 void MainWindow::onHandReleaseRequested(const QString &side)
@@ -952,38 +1269,39 @@ void MainWindow::onHandReleaseRequested(const QString &side)
                     .arg(side == QStringLiteral("left") ? QStringLiteral("左") : QStringLiteral("右")));
         return;
     }
-    QString err = client->executePreset(QStringLiteral("release"));
-    if (err.isEmpty()) {
-        if (m_messageManager) m_messageManager->success(QStringLiteral("释放手势已下发"));
-    } else {
-        if (m_messageManager) m_messageManager->error(err);
-    }
+    QPointer<MainWindow> self(this);
+    auto *mm = m_messageManager;
+    QThreadPool::globalInstance()->start([client, self, mm]() {
+        const QString err = client->executePreset(QStringLiteral("释放"));
+        if (!self) return;
+        QMetaObject::invokeMethod(self, [self, mm, err]() {
+            if (!mm) return;
+            if (err.isEmpty()) mm->success(QStringLiteral("释放手势已下发"));
+            else               mm->error(err);
+        }, Qt::QueuedConnection);
+    });
 }
 
 void MainWindow::onHandStopAllRequested()
 {
     if (!m_handManager) return;
-    // 急停：双手写全 0
-    const QVector<int> zeros(HAND_DOF_COUNT, 0);
-    QString e1 = m_handManager->left()->writeAll(zeros);
-    QString e2 = m_handManager->right()->writeAll(zeros);
-    // 地址来自设置页（默认 DEFAULT_ARM_WEB_URL）；设置被修改后再次打开时重新加载
-    if (m_messageManager) {
-    static QString loadedUrl;
-    const QString url = SettingsManager::instance()->armWebUrl();
-        if (e1.isEmpty() && e2.isEmpty())
-            m_messageManager->success(QStringLiteral("灵巧手已急停"));
-        else
-            m_messageManager->error(QStringLiteral("急停失败: %1%2").arg(e1, e2));
-    }
-}
-
-// =====================================================================
-// 夹爪
-// =====================================================================
-void MainWindow::updateGripperStatus(const QString &text)
-{
-    ui->lblGripperStatus->setText(text);
+    // 急停：双手写全 0。同样不能在主线程同步等待 RS485 事务。
+    QPointer<MainWindow> self(this);
+    auto *mgr = m_handManager;
+    auto *mm  = m_messageManager;
+    QThreadPool::globalInstance()->start([mgr, self, mm]() {
+        const QVector<int> zeros(HAND_DOF_COUNT, 0);
+        const QString e1 = mgr->left()->writeAll(zeros);
+        const QString e2 = mgr->right()->writeAll(zeros);
+        if (!self) return;
+        QMetaObject::invokeMethod(self, [self, mm, e1, e2]() {
+            if (!mm) return;
+            if (e1.isEmpty() && e2.isEmpty())
+                mm->success(QStringLiteral("灵巧手已急停"));
+            else
+                mm->error(QStringLiteral("急停失败: %1%2").arg(e1, e2));
+        }, Qt::QueuedConnection);
+    });
 }
 
 // =====================================================================
@@ -992,93 +1310,216 @@ void MainWindow::updateGripperStatus(const QString &text)
 
 void MainWindow::onLiftRefreshClicked()
 {
-    // 真实项目: 从 arm_manager 拉取设备列表
-    // 此处使用占位数据 (与 Python _refresh_lifting_devices 流程一致)
+    // 与 Python _refresh_lifting_devices 一致：重新拉 liftingColumn/list
     statusBar()->showMessage(QStringLiteral("正在刷新升降柱设备列表..."), 2000);
-    // 占位: 添加一个示例设备
-    if (ui->cmbLiftDevices->count() == 0) {
-        ui->cmbLiftDevices->addItem(QStringLiteral("liftingColumn-1"));
+    refreshLiftDevices();
+}
+
+// 取当前选中的设备；没有设备或客户端未就绪时给出提示并返回空串
+static QString currentLiftDevice(MainWindow *w, QComboBox *cmb, LiftingColumnClient *lc,
+                                 MessageManager *mm)
+{
+    Q_UNUSED(w)
+    const QString dev = cmb->currentText().trimmed();
+    if (!lc || dev.isEmpty()) {
+        if (mm) mm->warning(QStringLiteral("升降柱: 没有可用设备，请先连接机械臂并刷新设备列表"));
+        return {};
+    }
+    return dev;
+}
+
+void MainWindow::reportLiftResult(const QString &what, const QString &dev, bool ok)
+{
+    const QString err = m_lifting ? m_lifting->lastError() : QString();
+    qInfo().noquote() << QStringLiteral("[Main] liftingColumn %1(%2) -> %3 %4")
+                             .arg(what, dev,
+                                  ok ? QStringLiteral("ok") : QStringLiteral("fail"), err);
+    if (ok) {
+        statusBar()->showMessage(QStringLiteral("升降柱: %1 %2 成功").arg(what, dev), 2000);
+    } else {
+        const QString msg = QStringLiteral("升降柱 %1 失败(%2): %3")
+                                .arg(what, dev, err.isEmpty() ? QStringLiteral("未知原因") : err);
+        statusBar()->showMessage(msg, 5000);
+        if (m_messageManager) m_messageManager->error(msg);
+    }
+    // 立刻读一次状态，不等推送 / 轮询，标签马上反映使能、运动等变化
+    if (m_lifting) {
+        const QJsonObject s = m_lifting->getState(dev);
+        if (!s.isEmpty() && s.value(QStringLiteral("name")).toString() == dev) {
+            m_liftStates.insert(dev, s);
+            refreshLiftLabels();
+        }
     }
 }
 
 void MainWindow::onLiftEnableClicked()
 {
-    const QString dev = ui->cmbLiftDevices->currentText();
-    statusBar()->showMessage(QStringLiteral("升降柱: 上电 %1 (待实现)").arg(dev), 2000);
-    refreshLiftLabels();
+    const QString dev = currentLiftDevice(this, ui->cmbLiftDevices, m_lifting, m_messageManager);
+    if (dev.isEmpty()) return;
+    statusBar()->showMessage(QStringLiteral("升降柱: 正在上电 %1 ...").arg(dev));
+    reportLiftResult(QStringLiteral("上电"), dev, m_lifting->enable(dev));
 }
 
 void MainWindow::onLiftDisableClicked()
 {
-    const QString dev = ui->cmbLiftDevices->currentText();
-    statusBar()->showMessage(QStringLiteral("升降柱: 下电 %1 (待实现)").arg(dev), 2000);
-    refreshLiftLabels();
+    const QString dev = currentLiftDevice(this, ui->cmbLiftDevices, m_lifting, m_messageManager);
+    if (dev.isEmpty()) return;
+    reportLiftResult(QStringLiteral("下电"), dev, m_lifting->disable(dev));
 }
 
 void MainWindow::onLiftClearErrorClicked()
 {
-    const QString dev = ui->cmbLiftDevices->currentText();
-    statusBar()->showMessage(QStringLiteral("升降柱: 清错 %1 (待实现)").arg(dev), 2000);
-    refreshLiftLabels();
+    const QString dev = currentLiftDevice(this, ui->cmbLiftDevices, m_lifting, m_messageManager);
+    if (dev.isEmpty()) return;
+    reportLiftResult(QStringLiteral("清错"), dev, m_lifting->clearError(dev));
 }
 
 void MainWindow::onLiftMoveClicked()
 {
-    const QString dev = ui->cmbLiftDevices->currentText();
-    const double h_mm = ui->spinLiftTarget->value();
-    const double v    = ui->spinLiftSpeed->value();
-    Q_UNUSED(v);
-    statusBar()->showMessage(QStringLiteral("升降柱: 移动 %1 -> %2 mm (待实现)").arg(dev).arg(h_mm, 0, 'f', 0), 3000);
+    const QString dev = currentLiftDevice(this, ui->cmbLiftDevices, m_lifting, m_messageManager);
+    if (dev.isEmpty()) return;
+    const double heightM = ui->spinLiftTarget->value() / 1000.0;   // UI 是 mm，API 是 m
+    const double v = ui->spinLiftSpeed->value();                   // 0 = 默认，不传 speed
+    reportLiftResult(QStringLiteral("移动到 %1 mm").arg(ui->spinLiftTarget->value(), 0, 'f', 0),
+                     dev, m_lifting->moveTo(dev, heightM, v > 0.0 ? v : -1.0));
 }
 
 void MainWindow::onLiftStopClicked()
 {
-    const QString dev = ui->cmbLiftDevices->currentText();
-    statusBar()->showMessage(QStringLiteral("升降柱: 停止 %1 (待实现)").arg(dev), 2000);
+    const QString dev = currentLiftDevice(this, ui->cmbLiftDevices, m_lifting, m_messageManager);
+    if (dev.isEmpty()) return;
+    reportLiftResult(QStringLiteral("停止"), dev, m_lifting->stop(dev));
 }
 
-void MainWindow::onLiftJogUpPressed()
+// 点动：按下发 jogStart 并由 LiftingColumnClient 持续发心跳，松开发 jogStop。
+// jogStart 内部是阻塞等响应的（嵌套事件循环），等待期间用户可能已经松手，
+// 所以用 m_liftJogHeld 记录按键状态，jogStart 返回后若已松手立刻补一个 jogStop，
+// 否则会出现「松手后继续运动」。
+void MainWindow::startLiftJog(int direction)
 {
-    const QString dev = ui->cmbLiftDevices->currentText();
-    statusBar()->showMessage(QStringLiteral("升降柱: 上升 %1 (待实现)").arg(dev), 1500);
-}
-void MainWindow::onLiftJogUpReleased()
-{
-    const QString dev = ui->cmbLiftDevices->currentText();
-    statusBar()->showMessage(QStringLiteral("升降柱: 停止 %1 (待实现)").arg(dev), 1500);
-}
-void MainWindow::onLiftJogDownPressed()
-{
-    const QString dev = ui->cmbLiftDevices->currentText();
-    statusBar()->showMessage(QStringLiteral("升降柱: 下降 %1 (待实现)").arg(dev), 1500);
-}
-void MainWindow::onLiftJogDownReleased()
-{
-    const QString dev = ui->cmbLiftDevices->currentText();
-    statusBar()->showMessage(QStringLiteral("升降柱: 停止 %1 (待实现)").arg(dev), 1500);
+    const QString dev = currentLiftDevice(this, ui->cmbLiftDevices, m_lifting, m_messageManager);
+    if (dev.isEmpty()) return;
+
+    m_liftJogHeld = true;
+    const double v = ui->spinLiftJogSpeed->value();   // 0 = 默认
+    const bool ok = m_lifting->startJog(dev, direction, v > 0.0 ? v : -1.0,
+                                        ui->spinLiftJogTimeout->value());
+    if (!ok) {
+        m_liftJogHeld = false;
+        reportLiftResult(direction > 0 ? QStringLiteral("点动上升") : QStringLiteral("点动下降"),
+                         dev, false);
+        return;
+    }
+    if (!m_liftJogHeld)            // 等待响应期间已经松手
+        m_lifting->stopJog(dev);
 }
 
-void MainWindow::onLiftSetZeroClicked()
+void MainWindow::stopLiftJog()
 {
-    const QString dev = ui->cmbLiftDevices->currentText();
-    statusBar()->showMessage(QStringLiteral("升降柱: 置零 %1 (待实现)").arg(dev), 2000);
+    m_liftJogHeld = false;
+    if (!m_lifting || !m_lifting->isJogging()) return;
+    const QString dev = ui->cmbLiftDevices->currentText().trimmed();
+    const bool ok = m_lifting->stopJog(dev);
+    if (!ok)
+        reportLiftResult(QStringLiteral("点动停止"), dev, false);
 }
 
-void MainWindow::onLiftDeviceChanged(const QString &)
+void MainWindow::onLiftJogUpPressed()     { startLiftJog(1); }
+void MainWindow::onLiftJogUpReleased()    { stopLiftJog(); }
+void MainWindow::onLiftJogDownPressed()   { startLiftJog(-1); }
+void MainWindow::onLiftJogDownReleased()  { stopLiftJog(); }
+
+void MainWindow::onLiftDeviceChanged(const QString &name)
 {
+    applyLiftDeviceInfo(name);
     refreshLiftLabels();
+}
+
+// 按 list 结果设置目标高度 / 速度的取值范围与软限位显示（与 Python _on_device_changed 一致）
+void MainWindow::applyLiftDeviceInfo(const QString &device)
+{
+    const auto it = m_liftDevInfo.constFind(device);
+    if (it == m_liftDevInfo.constEnd()) {
+        ui->spinLiftTarget->setRange(-2000, 2000);
+        ui->lblLiftLimits->setText(QStringLiteral("—"));
+        return;
+    }
+    const QJsonObject &d = it.value();
+    const double minMm = d.value(QStringLiteral("minHeight")).toDouble() * 1000.0;
+    const double maxMm = d.value(QStringLiteral("maxHeight")).toDouble() * 1000.0;
+    const double maxV  = d.value(QStringLiteral("maxVelocity")).toDouble();
+    ui->spinLiftTarget->setRange(minMm, maxMm);
+    if (maxV > 0.0) {
+        ui->spinLiftSpeed->setMaximum(maxV);
+        ui->spinLiftJogSpeed->setMaximum(maxV);
+    }
+    ui->lblLiftLimits->setText(QStringLiteral("%1~%2 mm")
+                                   .arg(minMm, 0, 'f', 0).arg(maxMm, 0, 'f', 0));
+}
+
+static void setLiftLabel(QLabel *lbl, const QString &text, const QString &color, bool bold)
+{
+    lbl->setText(text);
+    lbl->setStyleSheet(color.isEmpty()
+        ? QString()
+        : QStringLiteral("color: %1;%2").arg(color, bold ? QStringLiteral(" font-weight: bold;") : QString()));
 }
 
 void MainWindow::refreshLiftLabels()
 {
-    // 占位: 全部 reset
-    ui->lblLiftHeight->setText(QStringLiteral("—"));
-    ui->lblLiftLimits->setText(QStringLiteral("—"));
-    ui->lblLiftOnline ->setText(QStringLiteral("○—"));
-    ui->lblLiftEnabled->setText(QStringLiteral("○—"));
-    ui->lblLiftMoving ->setText(QStringLiteral("○—"));
-    ui->lblLiftFault  ->setText(QStringLiteral("无"));
-    setLiftAlert({}, {});
+    const QString dev = ui->cmbLiftDevices->currentText().trimmed();
+    const auto it = m_liftStates.constFind(dev);
+    if (dev.isEmpty() || it == m_liftStates.constEnd()) {
+        ui->lblLiftHeight->setText(QStringLiteral("—"));
+        setLiftLabel(ui->lblLiftOnline,  QStringLiteral("—"), {}, false);
+        setLiftLabel(ui->lblLiftEnabled, QStringLiteral("—"), {}, false);
+        setLiftLabel(ui->lblLiftMoving,  QStringLiteral("—"), {}, false);
+        setLiftLabel(ui->lblLiftFault,   QStringLiteral("—"), {}, false);
+        setLiftAlert({}, {});
+        return;
+    }
+
+    const QJsonObject &s = it.value();
+    const QString kOk = QStringLiteral("#2E7D32"), kMuted = QStringLiteral("#999999"),
+                  kBlue = QStringLiteral("#1976D2"), kCyan = QStringLiteral("#00838F"),
+                  kDanger = QStringLiteral("#C62828"), kWarn = QStringLiteral("#EF6C00");
+
+    ui->lblLiftHeight->setText(QStringLiteral("%1 mm")
+        .arg(qRound(s.value(QStringLiteral("height")).toDouble() * 1000.0)));
+
+    if (s.value(QStringLiteral("online")).toBool())
+        setLiftLabel(ui->lblLiftOnline, QStringLiteral("●在线"), kOk, true);
+    else
+        setLiftLabel(ui->lblLiftOnline, QStringLiteral("○离线"), kMuted, false);
+
+    const bool enabled = s.value(QStringLiteral("enabled")).toBool();
+    if (enabled)
+        setLiftLabel(ui->lblLiftEnabled, QStringLiteral("✓使能"), kOk, true);
+    else
+        setLiftLabel(ui->lblLiftEnabled, QStringLiteral("○未使能"), kMuted, false);
+
+    if (s.value(QStringLiteral("jogging")).toBool())
+        setLiftLabel(ui->lblLiftMoving, QStringLiteral("▶点动中"), kCyan, true);
+    else if (s.value(QStringLiteral("moving")).toBool())
+        setLiftLabel(ui->lblLiftMoving, QStringLiteral("▶运动中"), kBlue, true);
+    else if (enabled && s.value(QStringLiteral("targetReached")).toBool())
+        setLiftLabel(ui->lblLiftMoving, QStringLiteral("●已到位"), kOk, false);
+    else
+        setLiftLabel(ui->lblLiftMoving, QStringLiteral("○静止"), kMuted, false);
+
+    const bool fault = s.value(QStringLiteral("fault")).toBool();
+    const int  code  = s.value(QStringLiteral("errorCode")).toInt();
+    if (fault)
+        setLiftLabel(ui->lblLiftFault, QStringLiteral("⚠码 %1").arg(code), kDanger, true);
+    else
+        setLiftLabel(ui->lblLiftFault, QStringLiteral("无"), kMuted, false);
+
+    if (s.value(QStringLiteral("emergencyStopActive")).toBool())
+        setLiftAlert(QStringLiteral("⛔ 机器人急停生效中，本升降柱联动下电"), kDanger);
+    else if (fault)
+        setLiftAlert(QStringLiteral("⚠ 驱动器故障 (码 %1)，请清错后重新使能").arg(code), kWarn);
+    else
+        setLiftAlert({}, {});
 }
 
 void MainWindow::setLiftAlert(const QString &text, const QString &bgColor)
@@ -1140,6 +1581,9 @@ void MainWindow::applyConnectionState()
         m_agvReportedSoftEmc = false;
         if (m_agvEmergency) setAgvEmergencyUi(false);
     }
+    ui->editAgvLockNick ->setEnabled(agvOn);
+    ui->btnAgvLock      ->setEnabled(agvOn);
+    ui->btnAgvUnlock    ->setEnabled(agvOn);
     ui->cmbAgvStations  ->setEnabled(agvOn);
     ui->btnViewMap      ->setEnabled(agvOn);
     // 导航控件依赖导航状态再叠加（运行中不能再次开始等）
@@ -1149,6 +1593,13 @@ void MainWindow::applyConnectionState()
     const bool armOn = m_armConnected;
     ui->btnLeftArmEnable   ->setEnabled(armOn);
     ui->btnRightArmEnable  ->setEnabled(armOn);
+    ui->btnLeftArmDrag     ->setEnabled(armOn && !m_leftArmDragBusy);
+    ui->btnRightArmDrag    ->setEnabled(armOn && !m_rightArmDragBusy);
+    if (!armOn) {
+        // 断线后真机状态未知，拖动按钮回到初始态
+        updateArmDragButton(true,  false);
+        updateArmDragButton(false, false);
+    }
     ui->sliderArmSpeed     ->setEnabled(armOn);
     ui->cmbArmProjects     ->setEnabled(armOn);
     ui->btnArmRefresh      ->setEnabled(armOn);
@@ -1166,7 +1617,6 @@ void MainWindow::applyConnectionState()
     ui->btnLiftStop        ->setEnabled(armOn);
     ui->btnLiftJogUp       ->setEnabled(armOn);
     ui->btnLiftJogDown     ->setEnabled(armOn);
-    ui->btnLiftSetZero     ->setEnabled(armOn);
     ui->btnLiftRefresh     ->setEnabled(armOn);
     ui->cmbLiftDevices     ->setEnabled(armOn);
     ui->spinLiftTarget     ->setEnabled(armOn);

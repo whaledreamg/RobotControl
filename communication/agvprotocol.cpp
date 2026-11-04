@@ -179,6 +179,8 @@ QString AgvProtocol::commandName(uint16_t cmdId)
     case CMD_GET_RELOCATE_STATUS:  return QStringLiteral("获取重定位状态");
     case CMD_GET_REMOTE_MAPS:      return QStringLiteral("获取地图列表");
     case CMD_GET_MAP:              return QStringLiteral("下载地图数据");
+    case CMD_CONFIG_LOCK:          return QStringLiteral("抢占控制权");
+    case CMD_CONFIG_UNLOCK:        return QStringLiteral("释放控制权");
     case CMD_SET_DO:               return QStringLiteral("设置数字输出");
     case CMD_SET_SOFT_EMERGENCY:   return QStringLiteral("软急停");
     case CMD_SET_MOTOR_ENABLE:     return QStringLiteral("电机使能");

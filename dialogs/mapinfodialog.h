@@ -9,6 +9,10 @@
 #include <QSlider>
 #include <QLabel>
 #include <QPushButton>
+#include <QComboBox>
+#include <QVariantList>
+#include <QVariantMap>
+#include <optional>
 #include <QGraphicsSceneMouseEvent>
 #include <QPainter>
 #include <QPolygonF>
@@ -155,21 +159,44 @@ public:
     // 更新激光点云
     void updateLasers(const QVariantList &lasers);
 
+    // 切换地图结果（由 MainWindow 回填）
+    void setSwitchMapResult(bool ok, const QString &mapName, const QString &msg);
+    // 重定位 / 确认定位结果
+    void setRelocateResult(bool ok, const QString &msg);
+    void setConfirmResult(bool ok, const QString &msg);
+    // 重定位状态：0 失败 / 1 成功 / 2 重定位中 / 3 完成待确认
+    void setRelocateStatus(int status);
+
 signals:
-    void refreshClicked();
+    void refreshClicked();                       // 获取地图列表
+    void switchMapRequested(const QString &mapName);
+    // x/y 单位 m，angleRad 单位 rad；home=true 时 x/y/angle 无效
+    void relocateRequested(double x, double y, double angleRad, bool home);
+    void confirmLocationRequested();
 
 private slots:
     void onApplyZoom(int value);
     void onFit();
     void onRefresh();
+    void onSwitchMap();
+    void onRelocate();
 
 private:
     void initUi();
     void clearMapItems();
     void redrawMap();
     void createAgvItem(double x, double y, double angleDeg);
+    void refreshMapCombo();
+    void refreshRelocateCombo();
+    void setStatusText(const QString &text);
 
     // ---- UI ----
+    QComboBox        *m_cbMaps       = nullptr;   // 可切换的地图列表
+    QPushButton      *m_btnSwitchMap = nullptr;
+    QComboBox        *m_cbRelocate   = nullptr;   // 重定位目标站点
+    QPushButton      *m_btnRelocate  = nullptr;
+    QPushButton      *m_btnConfirm   = nullptr;   // 确认定位
+    QLabel           *m_lblRelocStatus = nullptr;
     QLabel           *m_lblMap       = nullptr;
     QLabel           *m_lblPoints    = nullptr;
     QSlider          *m_zoomSlider   = nullptr;

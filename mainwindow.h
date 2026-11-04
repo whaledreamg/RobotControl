@@ -5,6 +5,8 @@
 #include <QStringList>
 #include <QVariantList>
 #include <QVariantMap>
+#include <QHash>
+#include <QJsonObject>
 #include "../common/types.h"
 
 QT_BEGIN_NAMESPACE
@@ -53,6 +55,8 @@ private slots:
     void onAgvCtrlConnected(bool connected);
     void onAgvPushConnected(bool connected);
     void onAgvError(const QString &err);
+    void onAgvNavStatus(int taskStatus);
+    void onAgvLasers(const QVariantList &lasers);
 
     void onAgvForwardPressed();   void onAgvForwardReleased();
     void onAgvBackwardPressed();  void onAgvBackwardReleased();
@@ -64,10 +68,17 @@ private slots:
     void onAgvNavStartClicked();
     void onAgvNavPauseClicked();
     void onAgvNavCancelClicked();
+    void onAgvLockClicked();
+    void onAgvLockResult(bool ok, const QString &msg);
+    void onAgvUnlockClicked();
+    void onAgvUnlockResult(bool ok, const QString &msg);
     void onAgvViewMapClicked();
     void onAgvSpeedChanged(int value);
     void onAgvStationChanged(const QString &text);
     void onRefreshMap();
+    void onMapSwitchRequested(const QString &mapName);
+    void onRelocateRequested(double x, double y, double angleRad, bool home);
+    void onRelocateStatus(int status);
     void onAgvMapListReceived(const QVariantList &maps, const QString &currentMap);
     void onAgvMapDataReceived(const QString &mapName, const QVariantMap &mapData);
 
@@ -80,6 +91,8 @@ private slots:
 
     void onLeftArmEnableClicked(bool checked);
     void onRightArmEnableClicked(bool checked);
+    void onLeftArmDragClicked();
+    void onRightArmDragClicked();
     void onArmSpeedChanged(int v);
     void onArmRefreshClicked();
     void onArmViewClicked();
@@ -106,7 +119,6 @@ private slots:
     void onLiftJogUpReleased();
     void onLiftJogDownPressed();
     void onLiftJogDownReleased();
-    void onLiftSetZeroClicked();
     void onLiftDeviceChanged(const QString &text);
 
 private:
@@ -115,6 +127,7 @@ private:
     void updateConnectionStatusUi();
     void applyConnectionState();
     void initLiftingColumn();
+    void refreshLiftDevices();
     void setupHandPanel();
 
     // AGV UI
@@ -128,14 +141,20 @@ private:
     void updateProjectStatusUi(const QString &state, const QString &project);
     void updateProjectButtons(const QString &status);
     void updateArmEnableButton(bool left, bool enabled);
+    /// 力矩拖动（robot/drag）：未拖动 -> 进入拖动；拖动中 -> 退出（robot/disable）
+    void toggleArmDrag(bool left);
+    /// 按 robot/status 的 mode 同步拖动按钮文案 / 样式
+    void updateArmDragButton(bool left, bool dragging);
     void updateSpeedHint(int value);
-
-    // Gripper UI
-    void updateGripperStatus(const QString &text);
 
     // Lifting UI
     void refreshLiftLabels();
     void setLiftAlert(const QString &text, const QString &bgColor);
+    void applyLiftDeviceInfo(const QString &device);
+    void startLiftJog(int direction);
+    void stopLiftJog();
+    /// 执行一次升降柱调用并给出结果提示；ok=false 时用 lastError 弹错
+    void reportLiftResult(const QString &what, const QString &dev, bool ok);
 
     Ui::MainWindow *ui;
 
@@ -165,6 +184,10 @@ private:
     QJsonObject m_lastRightArmState;
     bool     m_leftArmEnabled  = false;
     bool     m_rightArmEnabled = false;
+    bool     m_leftArmDragging  = false;   // robot/status 的 mode ∈ CSTDrag / ServoDrag
+    bool     m_rightArmDragging = false;
+    bool     m_leftArmDragBusy  = false;   // 进入 / 退出拖动的请求进行中
+    bool     m_rightArmDragBusy = false;
 
     // 工程状态
     QString m_currentProject = QStringLiteral("无");
@@ -178,7 +201,11 @@ private:
 
     // 升降柱
     LiftingColumnClient *m_lifting = nullptr;
+    QHash<QString, QJsonObject> m_liftDevInfo;   // list 结果：软限位 / 速度上限
+    QHash<QString, QJsonObject> m_liftStates;    // 最近一次状态（推送 / 首帧）
+    bool m_liftJogHeld = false;                  // 点动按钮当前是否仍被按住
     QTimer *m_clockTimer = nullptr;
+    QTimer *m_relocTimer = nullptr;   // 重定位期间 1s 轮询状态，结束即停
 };
 
 #endif // MAINWINDOW_H
