@@ -27,6 +27,7 @@ class HandPanel : public QFrame
     Q_OBJECT
 public:
     explicit HandPanel(const QString &side, QWidget *parent = nullptr);
+    ~HandPanel() override;
 
     void bindClient(Revo2HandClient *client);
     void setEnabled(bool enabled);
@@ -45,6 +46,8 @@ private:
 
     QString m_side;
     Revo2HandClient *m_client = nullptr;
+    /// 状态回调句柄（析构时注销，避免客户端回调到已销毁的 this）
+    int m_stateCbHandle = 0;
 
     QLabel *m_statusDot = nullptr;
     QLabel *m_statusLabel = nullptr;

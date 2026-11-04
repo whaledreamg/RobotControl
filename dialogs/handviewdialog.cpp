@@ -25,10 +25,12 @@
 #include <QTableWidgetItem>
 #include <QTextEdit>
 #include <QThread>
+#include <QThreadPool>
+#include <QPointer>
 #include <QTimer>
-#include <QtConcurrent>
 #include <QVBoxLayout>
 #include <QMutex>
+#include <atomic>
 
 namespace {
 QString fmtHex(const QByteArray &ba)
@@ -120,7 +122,12 @@ private:
     QLabel *m_lblCounter = nullptr;
     QTimer *m_pollTimer = nullptr;
     QMutex m_writeMutex;
-    bool m_pollInflight = false;
+    /// 轮询是否在途（跨线程，用原子量避免数据竞争）
+    std::atomic_bool m_pollInflight{false};
+    /// 状态回调句柄（析构时注销，避免回调打到已销毁的 this）
+    int m_stateCbHandle = 0;
+    /// 已销毁标志：后台任务回调用它判断是否还能安全访问成员
+    std::atomic_bool m_alive{true};
 };
 
 // =====================================================================
@@ -205,6 +212,16 @@ private slots:
 private:
     Revo2HandClient *m_client = nullptr;
     QTableWidget *m_table = nullptr;
+    /// 序列播放定时器（关闭时停止，避免回调打到已销毁的 this）
+    QTimer *m_playTimer = nullptr;
+    /// 播放队列（每步的目标位置 + 间隔）
+    struct PlayStep {
+        QVector<int> positions;
+        int durationMs = 100;
+    };
+    QVector<PlayStep> m_playQueue;
+    int m_playIndex = 0;
+    void playNextStep();
 };
 
 // =====================================================================
@@ -422,8 +439,14 @@ FingerMicroTab::FingerMicroTab(Revo2HandClient *client, QWidget *parent)
     layout->addLayout(infoRow);
 
     // 注册状态回调
-    m_client->registerStateCallback([this](const HandState &st) {
-        QTimer::singleShot(0, [this, st]() { onStateReceived(st); });
+    // 状态回调由 Revo2HandClient::notifyState() 保证在 UI 线程触发，
+    // 这里直接更新即可（原来这里用 QTimer::singleShot 是为了绕开跨线程，
+    // 但在工作线程里 singleShot 又不会触发）。
+    // 必须保存句柄：对话框是 WA_DeleteOnClose，销毁后若不注销，
+    // 客户端后续的状态变化会调用到已释放的 this → 闪退。
+    m_stateCbHandle = m_client->registerStateCallback([this](const HandState &st) {
+        if (!m_alive.load(std::memory_order_relaxed)) return;
+        onStateReceived(st);
     });
 
     // View 弹窗轮询定时器（200ms）
@@ -438,7 +461,16 @@ FingerMicroTab::FingerMicroTab(Revo2HandClient *client, QWidget *parent)
 
 FingerMicroTab::~FingerMicroTab()
 {
+    // 1) 标记死亡：后台任务（轮询/写入）回调用它判断能否再访问成员
+    m_alive.store(false, std::memory_order_relaxed);
+    // 2) 停掉轮询定时器，避免关闭后还在发起读请求
     if (m_pollTimer) m_pollTimer->stop();
+    // 3) 注销状态回调：m_client 的生命周期比本控件长（由 MainWindow 持有），
+    //    不注销的话它会继续调用本已销毁的对象 → 关闭 View 闪退。
+    //    Python 版靠 PySide Signal 在控件销毁时自动断开。
+    if (m_client && m_stateCbHandle)
+        m_client->unregisterStateCallback(m_stateCbHandle);
+    m_stateCbHandle = 0;
 }
 
 void FingerMicroTab::applyState(const HandState &st)
@@ -468,7 +500,7 @@ void FingerMicroTab::applyState(const HandState &st)
 void FingerMicroTab::onCardSendRequested(int dofIdx, float deg)
 {
     int timeMs = m_spinTime->value();
-    QtConcurrent::run([this, dofIdx, deg, timeMs]() {
+    QThreadPool::globalInstance()->start([this, dofIdx, deg, timeMs]() {
         threadWriteDof(dofIdx, deg, timeMs);
     });
 }
@@ -479,9 +511,14 @@ void FingerMicroTab::threadWriteDof(int dofIdx, float deg, int timeMs)
     m_client->setWriteTimeMs(timeMs);
     int raw = degToRaw(deg, dofIdx);
     QString err = m_client->writeDof(dofIdx, raw);
-    QTimer::singleShot(0, [this, dofIdx, raw, err]() {
+    // 注意：不能在这里用 QTimer::singleShot(0, ...)——本函数运行在
+    // QtConcurrent::run 的工作线程里，该线程没有事件循环，
+    // singleShot 投递的回调永远不会触发，状态提示就永远不更新。
+    // 用 invokeMethod + QueuedConnection 显式投递回 UI 线程。
+    if (!m_alive.load(std::memory_order_relaxed)) return;
+    QMetaObject::invokeMethod(this, [this, dofIdx, raw, err]() {
         afterWrite(dofIdx, raw, err);
-    });
+    }, Qt::QueuedConnection);
 }
 
 void FingerMicroTab::afterWrite(int dofIdx, int raw, const QString &err)
@@ -505,13 +542,19 @@ void FingerMicroTab::afterWrite(int dofIdx, int raw, const QString &err)
 
 void FingerMicroTab::onReadClicked()
 {
-    QtConcurrent::run([this]() { threadReadOnce(); });
+    QThreadPool::globalInstance()->start([this]() { threadReadOnce(); });
 }
 
 void FingerMicroTab::threadReadOnce()
 {
     QString err = m_client->readPositions();
-    QTimer::singleShot(0, [this, err]() { afterRead(err); });
+    // 工作线程没有事件循环，QTimer::singleShot 的回调不会触发；
+    // 用 invokeMethod 显式投递回 UI 线程。
+    // invokeMethod 以 this 为 context object，对象销毁后事件会被自动丢弃，
+    // 不会再调用到已释放的成员。
+    if (!m_alive.load(std::memory_order_relaxed)) return;
+    QMetaObject::invokeMethod(this, [this, err]() { afterRead(err); },
+                              Qt::QueuedConnection);
 }
 
 void FingerMicroTab::afterRead(const QString &err)
@@ -546,11 +589,16 @@ void FingerMicroTab::onLiveToggled(bool checked)
 
 void FingerMicroTab::onViewPollTick()
 {
-    if (m_pollInflight) return;
-    m_pollInflight = true;
-    QtConcurrent::run([this]() {
+    // m_pollInflight 跨线程读写（定时器在 UI 线程，工作线程里清零），
+    // 用原子标志避免数据竞争和重复发起读请求。
+    if (m_pollInflight.load(std::memory_order_relaxed)) return;
+    m_pollInflight.store(true, std::memory_order_relaxed);
+    QThreadPool::globalInstance()->start([this]() {
+        // readPositions() 最长阻塞约 3.4s（rs485/read 超时）。
+        // 期间对话框可能已被关闭销毁，此处不能访问已释放的成员。
         m_client->readPositions();
-        m_pollInflight = false;
+        if (!m_alive.load(std::memory_order_relaxed)) return;
+        m_pollInflight.store(false, std::memory_order_relaxed);
     });
 }
 
@@ -604,7 +652,13 @@ PresetTab::PresetTab(Revo2HandClient *client, QWidget *parent)
 
 void PresetTab::onPreset(const QString &name)
 {
-    m_client->executePreset(name);
+    // RS485 事务是同步的，放在主线程会把整个对话框冻住。
+    // 后台执行；只捕获 client（它由 DualHandManager 持有，生命周期长于本对话框），
+    // 不捕获 this，避免对话框关闭后回调打到已销毁的控件。
+    Revo2HandClient *client = m_client;
+    QThreadPool::globalInstance()->start([client, name]() {
+        client->executePreset(name);
+    });
 }
 
 // =====================================================================
@@ -694,21 +748,31 @@ ModbusDebugTab::ModbusDebugTab(Revo2HandClient *client, QWidget *parent)
 
 void ModbusDebugTab::onRefreshStatus()
 {
-    QJsonObject resp = m_client->ec2rsGetStatus();
-    if (resp.isEmpty()) {
-        m_lblStatus->setText(QStringLiteral("通道状态: 无响应"));
-        return;
-    }
-    if (resp.contains("err") && !resp["err"].toString().isEmpty()) {
-        m_lblStatus->setText(QStringLiteral("通道状态: 错误 %1").arg(resp["err"].toString()));
-        return;
-    }
-    QJsonObject db = resp["db"].toObject();
-    m_lblStatus->setText(QString::asprintf(
-        "ready=%d configured=%d busy=%d occupiedBy='%s' rx=%dB",
-        db["ready"].toInt(), db["configured"].toInt(), db["busy"].toInt(),
-        qPrintable(db["occupiedBy"].toString()),
-        db["receivedLength"].toInt()));
+    // rs485/getStatus 是同步事务，放到后台避免冻结界面。
+    // 用 QPointer 保护：对话框是 WA_DeleteOnClose，关闭后回调不能碰控件。
+    Revo2HandClient *client = m_client;
+    QPointer<ModbusDebugTab> self(this);
+    QThreadPool::globalInstance()->start([client, self]() {
+        const QJsonObject resp = client->ec2rsGetStatus();
+        if (!self) return;
+        QMetaObject::invokeMethod(self, [self, resp]() {
+            if (resp.isEmpty()) {
+                self->m_lblStatus->setText(QStringLiteral("通道状态: 无响应"));
+                return;
+            }
+            if (resp.contains("err") && !resp["err"].toString().isEmpty()) {
+                self->m_lblStatus->setText(
+                    QStringLiteral("通道状态: 错误 %1").arg(resp["err"].toString()));
+                return;
+            }
+            const QJsonObject db = resp["db"].toObject();
+            self->m_lblStatus->setText(QString::asprintf(
+                "ready=%d configured=%d busy=%d occupiedBy='%s' rx=%dB",
+                db["ready"].toInt(), db["configured"].toInt(), db["busy"].toInt(),
+                qPrintable(db["occupiedBy"].toString()),
+                db["backendStatus"].toObject()["receivedLength"].toInt()));
+        }, Qt::QueuedConnection);
+    });
 }
 
 void ModbusDebugTab::onGenReadFrame()
@@ -791,23 +855,33 @@ void ModbusDebugTab::onSendClicked()
 
     log(QStringLiteral("[%1] TX → %2").arg(timestamp()).arg(fmtHex(frame)));
 
-    const QString rxHex = m_client->rawExchange(frame, readLen);
-    if (rxHex.isEmpty()) {
-        log(QStringLiteral("[%1] ✗ 无应答").arg(timestamp()));
-        return;
-    }
-    // rawExchange 返回十六进制串；失败时以中文错误前缀返回
-    if (rxHex.startsWith(QLatin1String("写")) || rxHex.startsWith(QLatin1String("读"))
-        || rxHex.startsWith(QLatin1String("未连接"))) {
-        log(QStringLiteral("[%1] ✗ %2").arg(timestamp()).arg(rxHex));
-        return;
-    }
+    // rawExchange 是同步 RS485 事务（写+读，最长数秒），放到后台执行，
+    // 避免冻结界面。QPointer 保证对话框关闭后不再触碰控件。
+    Revo2HandClient *client = m_client;
+    QPointer<ModbusDebugTab> self(this);
+    QThreadPool::globalInstance()->start([client, self, frame, readLen]() {
+        const QString rxHex = client->rawExchange(frame, readLen);
+        if (!self) return;
+        QMetaObject::invokeMethod(self, [self, rxHex]() {
+            if (rxHex.isEmpty()) {
+                self->log(QStringLiteral("[%1] ✗ 无应答").arg(self->timestamp()));
+                return;
+            }
+            // rawExchange 返回十六进制串；失败时以中文错误前缀返回
+            if (rxHex.startsWith(QLatin1String("写")) || rxHex.startsWith(QLatin1String("读"))
+                || rxHex.startsWith(QLatin1String("未连接"))) {
+                self->log(QStringLiteral("[%1] ✗ %2").arg(self->timestamp()).arg(rxHex));
+                return;
+            }
 
-    const QByteArray rx =
-        QByteArray::fromHex(QByteArray(rxHex.toLatin1()).replace(' ', ""));
-    log(QStringLiteral("[%1] RX ← %2  CRC=%3")
-            .arg(timestamp()).arg(rxHex)
-            .arg(handVerifyCrc(rx) ? QStringLiteral("OK") : QStringLiteral("FAIL")));
+            const QByteArray rx =
+                QByteArray::fromHex(QByteArray(rxHex.toLatin1()).replace(' ', ""));
+            self->log(QStringLiteral("[%1] RX ← %2  CRC=%3")
+                          .arg(self->timestamp()).arg(rxHex)
+                          .arg(handVerifyCrc(rx) ? QStringLiteral("OK")
+                                                 : QStringLiteral("FAIL")));
+        }, Qt::QueuedConnection);
+    });
 }
 
 void ModbusDebugTab::log(const QString &line)
@@ -843,7 +917,7 @@ ParamConfigTab::ParamConfigTab(Revo2HandClient *client, QWidget *parent)
     m_cmbEcSlave->setEditable(true);
     m_cmbEcSlave->addItems({"EtherCAT485L", "EtherCAT485R"});
     m_cmbEcSlave->setCurrentText(client->ec2rsSlave());
-    uf->addRow(QStringLiteral("ec2rs485 通道:"), m_cmbEcSlave);
+    uf->addRow(QStringLiteral("RS485 通信板从站:"), m_cmbEcSlave);
 
     m_spinTimeMs = new QSpinBox();
     m_spinTimeMs->setRange(1, 2000);
@@ -989,29 +1063,60 @@ void SequenceEditTab::onCapture()
 
 void SequenceEditTab::onPlay()
 {
-    HandState st = m_client->state();
+    // 先把整条序列收集成队列，再交给定时器逐步播放。
+    //
+    // 原来用 QTimer::singleShot(0, ...) + QThread::sleep() 实现：
+    //   - singleShot 没带 context object，弹窗关闭后回调仍会触发，
+    //     调用到已释放的 this → 闪退；
+    //   - QThread::sleep() 直接阻塞 UI 线程，界面会卡死。
+    m_playQueue.clear();
     for (int r = 0; r < m_table->rowCount(); ++r) {
-        QList<int> positions;
+        QVector<int> positions;
         for (int c = 1; c <= DOF_COUNT; ++c) {
             QString txt = m_table->item(r, c) ? m_table->item(r, c)->text() : QStringLiteral("0");
-            bool ok;
+            bool ok = false;
             int v = txt.toInt(&ok);
             positions.append(ok ? qBound(0, v, 1000) : 0);
         }
         QString durTxt = m_table->item(r, DOF_COUNT + 1)
                              ? m_table->item(r, DOF_COUNT + 1)->text()
                              : QStringLiteral("100");
-        bool ok;
+        bool ok = false;
         int durationMs = durTxt.toInt(&ok);
         if (!ok) durationMs = 100;
         durationMs = qMax(10, durationMs);
-
-        // 延迟播放
-        QTimer::singleShot(0, [this, positions]() {
-            m_client->writeAll(positions);
-        });
-        QThread::sleep(uint(durationMs / 1000));
+        m_playQueue.append({positions, durationMs});
     }
+    if (m_playQueue.isEmpty()) return;
+
+    if (!m_playTimer) {
+        m_playTimer = new QTimer(this);
+        m_playTimer->setSingleShot(true);
+        connect(m_playTimer, &QTimer::timeout, this, &SequenceEditTab::playNextStep);
+    }
+    m_playIndex = 0;
+    playNextStep();
+}
+
+void SequenceEditTab::playNextStep()
+{
+    if (m_playIndex < 0 || m_playIndex >= m_playQueue.size()) {
+        m_playQueue.clear();
+        m_playIndex = 0;
+        return;
+    }
+    const PlayStep step = m_playQueue.at(m_playIndex++);
+    // 写入放到后台线程，避免阻塞 UI（rs485 收发最长约 3.4s）。
+    // 只捕获 client：它由 DualHandManager 持有，生命周期长于本对话框；
+    // 不捕获 this，避免对话框关闭后回调打到已销毁的控件。
+    Revo2HandClient *client = m_client;
+    QThreadPool::globalInstance()->start([client, positions = step.positions]() {
+        client->writeAll(positions);
+    });
+    if (m_playIndex < m_playQueue.size())
+        m_playTimer->start(step.durationMs);
+    else
+        m_playQueue.clear();
 }
 
 // =====================================================================

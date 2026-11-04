@@ -10,6 +10,8 @@
 #include <QPushButton>
 #include <QGraphicsScene>
 #include <QStyleOption>
+#include <QMessageBox>
+#include <QGroupBox>
 #include <QtMath>
 
 using std::nullopt;
@@ -408,7 +410,7 @@ void MapInfoDialog::initUi()
     mainLayout->setContentsMargins(10, 10, 10, 10);
     mainLayout->setSpacing(8);
 
-    // ---- 顶部控制条 ----
+    // ---- 顶部控制条（第 1 行）----
     QGridLayout *top = new QGridLayout();
     top->setHorizontalSpacing(8);
     top->setVerticalSpacing(4);
@@ -459,14 +461,10 @@ void MapInfoDialog::initUi()
     // QDialog::accept()/done() 在 show() 模式下不会隐藏窗口，
     // 表现为"点关闭关不掉"。这里直接调用 close() 关闭窗口。
     connect(btnClose, &QPushButton::clicked, this, &QWidget::close);
+    top->addWidget(btnClose, 0, 8);   // 桌面 / Android 一致：关闭在刷新右边
 #ifdef Q_OS_ANDROID
-    // 手机屏幕宽度不够放下整行控件，关闭按钮会被挤出屏幕外，
-    // 因此单独放到第二行，并隐藏桌面端才有意义的鼠标操作提示
+    // 唯一的平台差异：隐藏仅鼠标才有意义的操作提示，给整行省出宽度
     lblHint->hide();
-    btnClose->setMinimumHeight(48);
-    top->addWidget(btnClose, 1, 0, 1, 9);
-#else
-    top->addWidget(btnClose, 0, 8);
 #endif
 
     // 设置列拉伸
@@ -475,6 +473,60 @@ void MapInfoDialog::initUi()
     top->setColumnStretch(3, 1);
 
     mainLayout->addLayout(top);
+
+    // ---- 操作区（第 2 行）：地图与定位（单行）----
+    // 控制权（抢占 / 释放）已移到主界面 AGV 面板，这里只保留地图与重定位
+    auto makeField = [](const QString &text) {
+        QLabel *l = new QLabel(text);
+        l->setProperty("role", "fieldLabel");
+        return l;
+    };
+    constexpr int kBtnMinWidth = 80;   // 按钮统一最小宽度，避免文字长短不一
+
+    QGroupBox *boxMap = new QGroupBox(QStringLiteral("地图与定位"));   // 参考 SeerAgv MapForm
+
+    m_cbMaps = new QComboBox();
+    m_cbMaps->setToolTip(QStringLiteral("点击右上角“刷新”获取 AGV 上的地图列表"));
+    m_btnSwitchMap = new QPushButton(QStringLiteral("切换地图"));
+    m_btnSwitchMap->setProperty("role", "primary");
+    connect(m_btnSwitchMap, &QPushButton::clicked, this, &MapInfoDialog::onSwitchMap);
+
+    m_cbRelocate = new QComboBox();
+    m_btnRelocate = new QPushButton(QStringLiteral("重定位"));
+    m_btnRelocate->setProperty("role", "primary");
+    connect(m_btnRelocate, &QPushButton::clicked, this, &MapInfoDialog::onRelocate);
+    m_btnConfirm = new QPushButton(QStringLiteral("确认定位"));
+    m_btnConfirm->setProperty("role", "success");
+    connect(m_btnConfirm, &QPushButton::clicked, this, [this]() {
+        m_btnConfirm->setEnabled(false);
+        emit confirmLocationRequested();
+    });
+    m_lblRelocStatus = new QLabel(QStringLiteral("定位状态: -"));
+    m_lblRelocStatus->setProperty("role", "statusValue");
+
+    const QList<QPushButton *> actionBtns = { m_btnSwitchMap, m_btnRelocate, m_btnConfirm };
+    for (QPushButton *b : actionBtns)
+        b->setMinimumWidth(kBtnMinWidth);
+
+    // 桌面 / Android 共用同一套整组单行布局；两个下拉框平分剩余宽度，状态文字在最后
+    for (QComboBox *cb : { m_cbMaps, m_cbRelocate }) {
+        cb->setMinimumWidth(90);
+        cb->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    }
+
+    QHBoxLayout *hMap = new QHBoxLayout(boxMap);
+    hMap->setSpacing(8);
+    hMap->addWidget(makeField(QStringLiteral("地图列表")));
+    hMap->addWidget(m_cbMaps, 1);
+    hMap->addWidget(m_btnSwitchMap);
+    hMap->addSpacing(16);                     // 分隔“切换地图”与“重定位”两段操作
+    hMap->addWidget(makeField(QStringLiteral("重定位到")));
+    hMap->addWidget(m_cbRelocate, 1);
+    hMap->addWidget(m_btnRelocate);
+    hMap->addWidget(m_btnConfirm);
+    hMap->addSpacing(8);
+    hMap->addWidget(m_lblRelocStatus);
+    mainLayout->addWidget(boxMap);
 
     // ---- 图形视图 ----
     m_scene = new QGraphicsScene(this);
@@ -496,7 +548,140 @@ void MapInfoDialog::setData(const QVariantList &maps, const QString &currentMap,
     m_currentMap = currentMap;
     m_mapData = mapData;
     m_lblMap->setText(m_currentMap.isEmpty() ? QStringLiteral("-") : m_currentMap);
+    refreshMapCombo();
+    refreshRelocateCombo();
     redrawMap();
+}
+
+void MapInfoDialog::setStatusText(const QString &text)
+{
+    if (m_lblStatus)
+        m_lblStatus->setText(text);
+}
+
+void MapInfoDialog::refreshMapCombo()
+{
+    const QString keep = m_cbMaps->currentText();
+    m_cbMaps->blockSignals(true);
+    m_cbMaps->clear();
+    for (const QVariant &v : std::as_const(m_maps)) {
+        const QString name = v.toString();
+        if (!name.isEmpty())
+            m_cbMaps->addItem(name);
+    }
+    // 优先保持用户当前选择，否则选中 AGV 当前地图
+    int idx = m_cbMaps->findText(keep);
+    if (idx < 0) idx = m_cbMaps->findText(m_currentMap);
+    if (idx >= 0) m_cbMaps->setCurrentIndex(idx);
+    m_cbMaps->blockSignals(false);
+}
+
+void MapInfoDialog::refreshRelocateCombo()
+{
+    const QString keep = m_cbRelocate->currentText();
+    m_cbRelocate->clear();
+    const QVariantList advanced = m_mapData.value("advancedPointList").toList();
+    for (const QVariant &pv : advanced) {
+        const QVariantMap p = pv.toMap();
+        if (p.value("pos").toMap().isEmpty()) continue;
+        const QString name = p.value("instanceName").toString();
+        if (!name.isEmpty())
+            m_cbRelocate->addItem(name);
+    }
+    const int idx = m_cbRelocate->findText(keep);
+    if (idx >= 0) m_cbRelocate->setCurrentIndex(idx);
+}
+
+void MapInfoDialog::onSwitchMap()
+{
+    const QString name = m_cbMaps->currentText();
+    if (name.isEmpty()) {
+        setStatusText(QStringLiteral("请先点“刷新”获取地图列表"));
+        return;
+    }
+    if (name == m_currentMap) {
+        setStatusText(QStringLiteral("已经是当前地图：%1").arg(name));
+        return;
+    }
+    if (QMessageBox::question(this, QStringLiteral("切换地图"),
+                              QStringLiteral("切换到地图“%1”后 AGV 需要重新定位，确定吗？").arg(name))
+        != QMessageBox::Yes)
+        return;
+    m_btnSwitchMap->setEnabled(false);
+    setStatusText(QStringLiteral("正在切换地图 %1 ...").arg(name));
+    emit switchMapRequested(name);
+}
+
+void MapInfoDialog::onRelocate()
+{
+    const QString name = m_cbRelocate->currentText();
+    if (name.isEmpty()) {
+        setStatusText(QStringLiteral("没有可用站点，请先加载地图"));
+        return;
+    }
+    const QVariantList advanced = m_mapData.value("advancedPointList").toList();
+    for (const QVariant &pv : advanced) {
+        const QVariantMap p = pv.toMap();
+        if (p.value("instanceName").toString() != name) continue;
+        const QVariantMap pos = p.value("pos").toMap();
+        const double x = pos.value("x").toDouble();
+        const double y = pos.value("y").toDouble();
+        const double dir = p.value("dir").toDouble(0);   // 弧度
+        m_btnRelocate->setEnabled(false);
+        setStatusText(QStringLiteral("正在向 %1 (%2, %3) 重定位...")
+                          .arg(name).arg(x, 0, 'f', 2).arg(y, 0, 'f', 2));
+        emit relocateRequested(x, y, dir, false);
+        return;
+    }
+    setStatusText(QStringLiteral("未找到站点 %1 的坐标").arg(name));
+}
+
+void MapInfoDialog::setSwitchMapResult(bool ok, const QString &mapName, const QString &msg)
+{
+    m_btnSwitchMap->setEnabled(true);
+    if (ok) {
+        setStatusText(QStringLiteral("已切换到地图 %1，请重新定位").arg(mapName));
+    } else {
+        setStatusText(QStringLiteral("切换地图失败：%1").arg(msg));
+        QMessageBox::warning(this, QStringLiteral("切换地图"),
+                             QStringLiteral("切换地图失败：%1").arg(msg));
+    }
+}
+
+void MapInfoDialog::setRelocateResult(bool ok, const QString &msg)
+{
+    if (ok) {
+        // 指令已被 AGV 接受，等待状态轮询到“成功 / 待确认”后再放开按钮
+        setStatusText(QStringLiteral("重定位指令已下发，等待 AGV 完成..."));
+        return;
+    }
+    m_btnRelocate->setEnabled(true);
+    setStatusText(QStringLiteral("重定位失败：%1").arg(msg));
+    QMessageBox::warning(this, QStringLiteral("重定位"),
+                         QStringLiteral("重定位失败：%1").arg(msg));
+}
+
+void MapInfoDialog::setConfirmResult(bool ok, const QString &msg)
+{
+    m_btnConfirm->setEnabled(true);
+    if (ok) {
+        setStatusText(QStringLiteral("已确认定位"));
+    } else {
+        setStatusText(QStringLiteral("确认定位失败：%1").arg(msg));
+        QMessageBox::warning(this, QStringLiteral("确认定位"),
+                             QStringLiteral("确认定位失败：%1").arg(msg));
+    }
+}
+
+void MapInfoDialog::setRelocateStatus(int status)
+{
+    static const char *names[] = {"失败", "成功", "重定位中", "完成待确认"};
+    const QString text = (status >= 0 && status <= 3)
+        ? QString::fromUtf8(names[status]) : QString::number(status);
+    m_lblRelocStatus->setText(QStringLiteral("定位状态: %1").arg(text));
+    // 失败 / 成功 / 待确认：重定位流程已结束，放开按钮
+    if (status != 2)
+        m_btnRelocate->setEnabled(true);
 }
 
 void MapInfoDialog::updateAgvPose(double x, double y, double angleDeg)

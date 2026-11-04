@@ -31,7 +31,7 @@ QLabel#lblSubtitle {
 
 QLabel#lblArmIpTitle, QLabel#lblAgvIpTitle,
 QLabel#lblArmSpeedSlow, QLabel#lblArmSpeedFast,
-QLabel#lblNavStationTitle, QLabel#lblGripperForceTitle,
+QLabel#lblNavStationTitle,
 QLabel#lblLiftDeviceTitle, QLabel#lblLiftTargetTitle,
 QLabel#lblLiftSpeedTitle, QLabel#lblLiftJogSpeedTitle,
 QLabel#lblLiftJogTimeoutTitle {
@@ -40,14 +40,14 @@ QLabel#lblLiftJogTimeoutTitle {
     background: transparent;
 }
 
-QLineEdit#editArmIp, QLineEdit#editAgvIp {
+QLineEdit#editArmIp, QLineEdit#editAgvIp, QLineEdit#editAgvLockNick {
     background-color: #FFFFFF;
     border: 1px solid #D0D6E0;
     border-radius: 6px;
     padding: 4px 8px;
     min-height: 24px;
 }
-QLineEdit#editArmIp:focus, QLineEdit#editAgvIp:focus {
+QLineEdit#editArmIp:focus, QLineEdit#editAgvIp:focus, QLineEdit#editAgvLockNick:focus {
     border-color: #0078D4;
 }
 
@@ -56,89 +56,124 @@ QFrame#sep1, QFrame#sep2 {
     background: #C8D0E0;
 }
 
-/* 通用按钮 (果冻风) - 使用 objectName 区分 (无重复) */
-QPushButton#btnConnect, QPushButton#btnArmView, QPushButton#btnLiftMove, QPushButton#btnLiftJogUp, QPushButton#btnLiftJogDown, QPushButton#btnGripperOpen {
-    background-color: rgba(0, 120, 212, 60);
-    color: #0078D4;
+/* =====================================================
+ * 按钮 (果冻风) - 配色与 Python 版 ui/theme.py 的 PALETTE 保持一致
+ *   常态: 半透明底色 + 深色文字，无描边，圆角 10px
+ *   hover: 底色变实色，文字变白
+ *   pressed: 在 hover 基础上文字下移 1px
+ *   disabled: 统一灰蓝底 + 弱化文字
+ * ===================================================== */
+
+/* 海蓝 primary: 连接 / 查看 / 移动 / 点动 / 继续 */
+QPushButton#btnConnect, QPushButton#btnArmView, QPushButton#btnLiftMove,
+QPushButton#btnLiftJogUp, QPushButton#btnLiftJogDown, QPushButton#btnArmProjectResume {
+    background-color: rgba(74, 144, 226, 90);
+    color: #357abd;
     border: none;
     border-radius: 10px;
-    padding: 6px 16px;
+    padding: 7px 16px;
     font-weight: bold;
     font-size: 13px;
 }
-QPushButton#btnConnect:hover, QPushButton#btnConnect:pressed,
-QPushButton#btnArmView:hover, QPushButton#btnArmView:pressed,
-QPushButton#btnLiftMove:hover, QPushButton#btnLiftMove:pressed,
-QPushButton#btnLiftJogUp:hover, QPushButton#btnLiftJogUp:pressed,
-QPushButton#btnLiftJogDown:hover, QPushButton#btnLiftJogDown:pressed,
-QPushButton#btnGripperOpen:hover, QPushButton#btnGripperOpen:pressed {
-    background-color: #0078D4;
-    color: white;
+QPushButton#btnConnect:hover, QPushButton#btnArmView:hover, QPushButton#btnLiftMove:hover,
+QPushButton#btnLiftJogUp:hover, QPushButton#btnLiftJogDown:hover, QPushButton#btnArmProjectResume:hover {
+    background-color: #4a90e2;
+    color: #ffffff;
 }
-QPushButton#btnConnect:disabled {
-    background-color: rgba(220, 228, 238, 120);
-    color: #999999;
+QPushButton#btnConnect:pressed, QPushButton#btnArmView:pressed, QPushButton#btnLiftMove:pressed,
+QPushButton#btnLiftJogUp:pressed, QPushButton#btnLiftJogDown:pressed, QPushButton#btnArmProjectResume:pressed {
+    background-color: #357abd;
+    color: #ffffff;
+    padding-top: 8px;
+    padding-bottom: 6px;
+}
+/* 连接按钮: 已连接 (薄荷) / 连接失败 (樱粉)，由代码设置 role 属性 */
+QPushButton#btnConnect[role="connected"] {
+    background-color: rgba(94, 201, 159, 90);
+    color: #3fa37a;
+}
+QPushButton#btnConnect[role="connected"]:hover {
+    background-color: #5ec99f;
+    color: #ffffff;
+}
+QPushButton#btnConnect[role="danger"] {
+    background-color: rgba(239, 111, 108, 90);
+    color: #c44a47;
+}
+QPushButton#btnConnect[role="danger"]:hover {
+    background-color: #ef6f6c;
+    color: #ffffff;
 }
 
-QPushButton#btnArmProjectStart, QPushButton#btnLiftEnable, QPushButton#btnAgvNavStart {
-    background-color: rgba(46, 125, 50, 60);
-    color: #2E7D32;
+/* 薄荷 success: 开始 / 上电 */
+QPushButton#btnArmProjectStart, QPushButton#btnLiftEnable, QPushButton#btnAgvNavStart, QPushButton#btnAgvLock {
+    background-color: rgba(94, 201, 159, 90);
+    color: #3fa37a;
     border: none;
     border-radius: 10px;
-    padding: 6px 16px;
+    padding: 7px 16px;
     font-weight: bold;
     font-size: 13px;
 }
-QPushButton#btnArmProjectStart:hover, QPushButton#btnArmProjectStart:pressed,
-QPushButton#btnLiftEnable:hover, QPushButton#btnLiftEnable:pressed,
-QPushButton#btnAgvNavStart:hover, QPushButton#btnAgvNavStart:pressed {
-    background-color: #2E7D32;
-    color: white;
+QPushButton#btnArmProjectStart:hover, QPushButton#btnLiftEnable:hover, QPushButton#btnAgvNavStart:hover,
+QPushButton#btnAgvLock:hover {
+    background-color: #5ec99f;
+    color: #ffffff;
 }
-QPushButton#btnArmProjectStart:disabled,
-QPushButton#btnAgvNavStart:disabled {
-    background-color: rgba(220, 228, 238, 120);
-    color: #999999;
+QPushButton#btnArmProjectStart:pressed, QPushButton#btnLiftEnable:pressed, QPushButton#btnAgvNavStart:pressed,
+QPushButton#btnAgvLock:pressed {
+    background-color: #3fa37a;
+    color: #ffffff;
+    padding-top: 8px;
+    padding-bottom: 6px;
 }
 
-QPushButton#btnClearError, QPushButton#btnArmProjectPause, QPushButton#btnGripperClose, QPushButton#btnLiftDisable {
-    background-color: rgba(255, 152, 0, 60);
-    color: #C77700;
+/* 蜜桃 warning: 清除异常 / 暂停 / 下电 */
+QPushButton#btnClearError, QPushButton#btnArmProjectPause, QPushButton#btnLiftDisable, QPushButton#btnAgvNavPause {
+    background-color: rgba(244, 162, 97, 90);
+    color: #d98a4a;
     border: none;
     border-radius: 10px;
-    padding: 6px 16px;
+    padding: 7px 16px;
     font-weight: bold;
     font-size: 13px;
 }
-QPushButton#btnClearError:hover, QPushButton#btnClearError:pressed,
-QPushButton#btnArmProjectPause:hover, QPushButton#btnArmProjectPause:pressed,
-QPushButton#btnGripperClose:hover, QPushButton#btnGripperClose:pressed,
-QPushButton#btnLiftDisable:hover, QPushButton#btnLiftDisable:pressed {
-    background-color: #FF9800;
-    color: white;
+QPushButton#btnClearError:hover, QPushButton#btnArmProjectPause:hover,
+QPushButton#btnLiftDisable:hover, QPushButton#btnAgvNavPause:hover {
+    background-color: #f4a261;
+    color: #ffffff;
 }
-QPushButton#btnArmProjectPause:disabled {
-    background-color: rgba(220, 228, 238, 120);
-    color: #999999;
+QPushButton#btnClearError:pressed, QPushButton#btnArmProjectPause:pressed,
+QPushButton#btnLiftDisable:pressed, QPushButton#btnAgvNavPause:pressed {
+    background-color: #d98a4a;
+    color: #ffffff;
+    padding-top: 8px;
+    padding-bottom: 6px;
 }
 
-QPushButton#btnEstop, QPushButton#btnArmProjectStop, QPushButton#btnAgvEmergency, QPushButton#btnGripperStop, QPushButton#btnLiftStop {
-    background-color: rgba(211, 47, 47, 60);
-    color: #C62828;
+/* 樱粉 danger: 急停 / 停止 */
+QPushButton#btnEstop, QPushButton#btnArmProjectStop, QPushButton#btnAgvEmergency, QPushButton#btnLiftStop {
+    background-color: rgba(239, 111, 108, 90);
+    color: #c44a47;
     border: none;
     border-radius: 10px;
-    padding: 6px 16px;
+    padding: 7px 16px;
     font-weight: bold;
     font-size: 13px;
 }
-QPushButton#btnEstop:hover, QPushButton#btnEstop:pressed,
-QPushButton#btnArmProjectStop:hover, QPushButton#btnArmProjectStop:pressed,
-QPushButton#btnAgvEmergency:hover, QPushButton#btnAgvEmergency:pressed,
-QPushButton#btnGripperStop:hover, QPushButton#btnGripperStop:pressed,
-QPushButton#btnLiftStop:hover, QPushButton#btnLiftStop:pressed {
-    background-color: #D32F2F;
-    color: white;
+QPushButton#btnEstop:hover, QPushButton#btnArmProjectStop:hover,
+QPushButton#btnAgvEmergency:hover, QPushButton#btnLiftStop:hover {
+    background-color: #ef6f6c;
+    color: #ffffff;
 }
+QPushButton#btnEstop:pressed, QPushButton#btnArmProjectStop:pressed,
+QPushButton#btnAgvEmergency:pressed, QPushButton#btnLiftStop:pressed {
+    background-color: #c44a47;
+    color: #ffffff;
+    padding-top: 8px;
+    padding-bottom: 6px;
+}
+
 /* AGV 急停按钮的“解除急停”状态：薄荷绿（代码设置 estopActive=true） */
 QPushButton#btnAgvEmergency[estopActive="true"] {
     background-color: rgba(94, 201, 159, 90);
@@ -153,52 +188,47 @@ QPushButton#btnAgvEmergency[estopActive="true"]:pressed {
     color: #ffffff;
 }
 
-QPushButton#btnArmProjectStop:disabled,
-QPushButton#btnAgvEmergency:disabled {
-    background-color: rgba(220, 228, 238, 120);
-    color: #999999;
-}
-
-QPushButton#btnSettings, QPushButton#btnViewMap, QPushButton#btnAgvNavCancel, QPushButton#btnArmRefresh, QPushButton#btnLiftClearError, QPushButton#btnLiftRefresh, QPushButton#btnLiftSetZero {
-    background-color: rgba(106, 27, 154, 60);
-    color: #6A1B9A;
+/* 淡紫 purple: 次要操作 (设置 / 地图 / 取消 / 刷新 / 清错) */
+QPushButton#btnSettings, QPushButton#btnViewMap, QPushButton#btnAgvNavCancel, QPushButton#btnArmRefresh,
+QPushButton#btnLiftClearError, QPushButton#btnLiftRefresh, QPushButton#btnAgvUnlock {
+    background-color: rgba(167, 139, 207, 90);
+    color: #8466b3;
     border: none;
     border-radius: 10px;
-    padding: 6px 16px;
+    padding: 7px 16px;
     font-weight: bold;
     font-size: 13px;
 }
-QPushButton#btnSettings:hover, QPushButton#btnSettings:pressed,
-QPushButton#btnViewMap:hover, QPushButton#btnViewMap:pressed,
-QPushButton#btnAgvNavCancel:hover, QPushButton#btnAgvNavCancel:pressed,
-QPushButton#btnArmRefresh:hover, QPushButton#btnArmRefresh:pressed,
-QPushButton#btnLiftClearError:hover, QPushButton#btnLiftClearError:pressed,
-QPushButton#btnLiftRefresh:hover, QPushButton#btnLiftRefresh:pressed,
-QPushButton#btnLiftSetZero:hover, QPushButton#btnLiftSetZero:pressed {
-    background-color: #6A1B9A;
-    color: white;
+QPushButton#btnSettings:hover, QPushButton#btnViewMap:hover, QPushButton#btnAgvNavCancel:hover,
+QPushButton#btnArmRefresh:hover, QPushButton#btnLiftClearError:hover, QPushButton#btnLiftRefresh:hover,
+QPushButton#btnAgvUnlock:hover {
+    background-color: #a78bcf;
+    color: #ffffff;
 }
-QPushButton#btnAgvNavCancel:disabled {
-    background-color: rgba(220, 228, 238, 120);
-    color: #999999;
+QPushButton#btnSettings:pressed, QPushButton#btnViewMap:pressed, QPushButton#btnAgvNavCancel:pressed,
+QPushButton#btnArmRefresh:pressed, QPushButton#btnLiftClearError:pressed, QPushButton#btnLiftRefresh:pressed,
+QPushButton#btnAgvUnlock:pressed {
+    background-color: #8466b3;
+    color: #ffffff;
+    padding-top: 8px;
+    padding-bottom: 6px;
 }
 
-QPushButton#btnArmProjectResume {
-    background-color: rgba(0, 120, 212, 60);
-    color: #0078D4;
-    border: none;
-    border-radius: 10px;
-    padding: 6px 16px;
-    font-weight: bold;
-    font-size: 13px;
-}
-QPushButton#btnArmProjectResume:hover, QPushButton#btnArmProjectResume:pressed {
-    background-color: #0078D4;
-    color: white;
-}
-QPushButton#btnArmProjectResume:disabled {
+/* 所有主题按钮的禁用态 */
+QPushButton#btnConnect:disabled, QPushButton#btnArmView:disabled, QPushButton#btnLiftMove:disabled,
+QPushButton#btnLiftJogUp:disabled, QPushButton#btnLiftJogDown:disabled, QPushButton#btnArmProjectResume:disabled,
+QPushButton#btnArmProjectStart:disabled, QPushButton#btnLiftEnable:disabled, QPushButton#btnAgvNavStart:disabled,
+QPushButton#btnClearError:disabled, QPushButton#btnArmProjectPause:disabled, QPushButton#btnLiftDisable:disabled,
+QPushButton#btnAgvNavPause:disabled,
+QPushButton#btnEstop:disabled, QPushButton#btnArmProjectStop:disabled, QPushButton#btnAgvEmergency:disabled,
+QPushButton#btnLiftStop:disabled,
+QPushButton#btnSettings:disabled, QPushButton#btnViewMap:disabled, QPushButton#btnAgvNavCancel:disabled,
+QPushButton#btnArmRefresh:disabled, QPushButton#btnLiftClearError:disabled, QPushButton#btnLiftRefresh:disabled,
+QPushButton#btnLeftArmEnable:disabled, QPushButton#btnRightArmEnable:disabled,
+QPushButton#btnLeftArmDrag:disabled, QPushButton#btnRightArmDrag:disabled,
+QPushButton#btnAgvLock:disabled, QPushButton#btnAgvUnlock:disabled {
     background-color: rgba(220, 228, 238, 120);
-    color: #999999;
+    color: #8a99ad;
 }
 
 /* 顶部状态点 (使用 objectName 选择器) */
@@ -229,7 +259,6 @@ QGroupBox::title {
     subcontrol-position: top left;
     left: 12px;
 }
-QGroupBox#gripperGroup::title,
 QGroupBox#liftingGroup,
 QGroupBox#armEnableGroup::title,
 QGroupBox#armProjectGroup::title {
@@ -239,39 +268,53 @@ QGroupBox#armProjectGroup::title {
 /* ---------- AGV 方向按钮 ---------- */
 QPushButton#btnAgvForward, QPushButton#btnAgvBackward,
 QPushButton#btnAgvLeft, QPushButton#btnAgvRight {
-    background-color: rgba(0, 120, 212, 40);
-    color: #0078D4;
+    background-color: rgba(74, 144, 226, 90);
+    color: #357abd;
     border: none;
-    border-radius: 12px;
+    border-radius: 14px;
+    padding: 0;
+    min-height: 0;
     font-size: 24px;
     font-weight: bold;
 }
 QPushButton#btnAgvForward:hover, QPushButton#btnAgvBackward:hover,
 QPushButton#btnAgvLeft:hover, QPushButton#btnAgvRight:hover {
-    background-color: rgba(0, 120, 212, 80);
+    background-color: rgba(74, 144, 226, 150);
 }
 QPushButton#btnAgvForward:pressed, QPushButton#btnAgvBackward:pressed,
-QPushButton#btnAgvLeft:pressed, QPushButton#btnAgvRight:pressed {
-    background-color: #0078D4;
-    color: white;
+QPushButton#btnAgvLeft:pressed, QPushButton#btnAgvRight:pressed,
+QPushButton#btnAgvForward:checked, QPushButton#btnAgvBackward:checked,
+QPushButton#btnAgvLeft:checked, QPushButton#btnAgvRight:checked {
+    background-color: #4a90e2;
+    color: #ffffff;
 }
 QPushButton#btnAgvForward:disabled, QPushButton#btnAgvBackward:disabled,
 QPushButton#btnAgvLeft:disabled, QPushButton#btnAgvRight:disabled {
     background-color: rgba(220, 228, 238, 120);
-    color: #999999;
+    color: #8a99ad;
 }
 
 QPushButton#btnAgvStop {
-    background-color: rgba(211, 47, 47, 60);
-    color: #C62828;
+    background-color: rgba(239, 111, 108, 90);
+    color: #c44a47;
     border: none;
-    border-radius: 12px;
+    border-radius: 14px;
+    padding: 0;
+    min-height: 0;
     font-size: 14px;
     font-weight: bold;
 }
-QPushButton#btnAgvStop:hover, QPushButton#btnAgvStop:pressed {
-    background-color: #D32F2F;
-    color: white;
+QPushButton#btnAgvStop:hover {
+    background-color: #ef6f6c;
+    color: #ffffff;
+}
+QPushButton#btnAgvStop:pressed {
+    background-color: #c44a47;
+    color: #ffffff;
+}
+QPushButton#btnAgvStop:disabled {
+    background-color: rgba(220, 228, 238, 120);
+    color: #8a99ad;
 }
 
 /* AGV 状态标签 */
@@ -300,21 +343,62 @@ QLabel#lblRightArmTitle, QLabel#lblRightArmTag {
     font-size: 12px;
     background: transparent;
 }
+/* 使能: 未使能=海蓝玻璃，已使能(checked)=薄荷玻璃 */
 QPushButton#btnLeftArmEnable, QPushButton#btnRightArmEnable {
-    background-color: rgba(0, 120, 212, 40);
-    color: #0078D4;
+    background-color: rgba(74, 144, 226, 90);
+    color: #357abd;
     border: none;
-    border-radius: 8px;
+    border-radius: 10px;
     font-weight: bold;
     font-size: 13px;
-    padding: 6px 16px;
+    padding: 7px 16px;
 }
 QPushButton#btnLeftArmEnable:hover, QPushButton#btnRightArmEnable:hover {
-    background-color: rgba(0, 120, 212, 80);
+    background-color: #4a90e2;
+    color: #ffffff;
+}
+QPushButton#btnLeftArmEnable:pressed, QPushButton#btnRightArmEnable:pressed {
+    background-color: #357abd;
+    color: #ffffff;
+    padding-top: 8px;
+    padding-bottom: 6px;
 }
 QPushButton#btnLeftArmEnable:checked, QPushButton#btnRightArmEnable:checked {
-    background-color: #2E7D32;
-    color: white;
+    background-color: rgba(94, 201, 159, 90);
+    color: #3fa37a;
+}
+QPushButton#btnLeftArmEnable:checked:hover, QPushButton#btnRightArmEnable:checked:hover {
+    background-color: #5ec99f;
+    color: #ffffff;
+}
+
+/* 拖动: 淡紫玻璃 (特殊模式)；拖动中由代码设置 dragging 属性，黄色醒目警示 */
+QPushButton#btnLeftArmDrag, QPushButton#btnRightArmDrag {
+    background-color: rgba(167, 139, 207, 90);
+    color: #8466b3;
+    border: none;
+    border-radius: 10px;
+    font-weight: bold;
+    font-size: 13px;
+    padding: 7px 16px;
+}
+QPushButton#btnLeftArmDrag:hover, QPushButton#btnRightArmDrag:hover {
+    background-color: #a78bcf;
+    color: #ffffff;
+}
+QPushButton#btnLeftArmDrag:pressed, QPushButton#btnRightArmDrag:pressed {
+    background-color: #8466b3;
+    color: #ffffff;
+    padding-top: 8px;
+    padding-bottom: 6px;
+}
+QPushButton#btnLeftArmDrag[dragging="true"], QPushButton#btnRightArmDrag[dragging="true"] {
+    background-color: rgba(250, 200, 80, 220);
+    color: #5a3d00;
+}
+QPushButton#btnLeftArmDrag[dragging="true"]:hover, QPushButton#btnRightArmDrag[dragging="true"]:hover {
+    background-color: #f4a261;
+    color: #ffffff;
 }
 QLabel#lblLeftArmEnabled, QLabel#lblRightArmEnabled {
     color: #777;
@@ -360,13 +444,6 @@ QLabel#lblLiftMoving, QLabel#lblLiftFault {
     background: transparent;
 }
 
-/* ---------- 夹爪状态 ---------- */
-QLabel#lblGripperStatus {
-    color: #777;
-    font-size: 11px;
-    background: transparent;
-}
-
 /* ---------- 升降柱告警 ---------- */
 QLabel#lblLiftAlert {
     color: white;
@@ -384,6 +461,19 @@ QLabel#lblLeftPoseTag, QLabel#lblRightPoseTag {
 }
 QLabel[lbl^="lblLeft"], QLabel[lbl^="lblRight"] {
     color: #1E1E1E;
+    background: transparent;
+}
+
+/* ---------- 右侧滚动区域：背景透明，保留页面底色 ---------- */
+QScrollArea#armScroll,
+QScrollArea#liftScroll,
+QScrollArea#handScroll {
+    background: transparent;
+    border: none;
+}
+QScrollArea#armScroll > QWidget > QWidget,
+QScrollArea#liftScroll > QWidget > QWidget,
+QScrollArea#handScroll > QWidget > QWidget {
     background: transparent;
 }
 

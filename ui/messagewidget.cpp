@@ -1,5 +1,6 @@
 #include "messagewidget.h"
 
+#include <QColor>
 #include <QEvent>
 #include <QGraphicsDropShadowEffect>
 #include <QHBoxLayout>
@@ -14,10 +15,14 @@
 namespace {
 constexpr int kMessageMargin   = 12;
 constexpr int kDefaultDuration = 2500;
+constexpr int kMinLabelWidth   = 160;   // 文字区最小宽度（短消息也不会太窄）
+constexpr int kMaxLabelWidth   = 640;   // 文字区最大宽度（同 Python 版），超出则换行
+constexpr int kLabelSlack      = 6;     // 文本宽度之外的固定余量，避免字体取整导致末尾被换行/截断
 
 struct StyleConf {
     const char *border;
-    const char *bg;
+    QColor      bg;     // 半透明背景。注意必须用 QColor(r,g,b,a)：
+                        // QColor(QString) 不识别 CSS 的 "rgba(...)"，会得到无效色并被画成纯黑
     const char *color;
     const char *icon;
 };
@@ -25,11 +30,11 @@ struct StyleConf {
 StyleConf styleFor(MessageType t)
 {
     switch (t) {
-    case MessageType::Success: return {"#67C23A", "rgba(240,249,235,225)", "rgb(60,160,40)",  "✓"};
-    case MessageType::Error:   return {"#F56C6C", "rgba(254,240,240,225)", "rgb(200,80,80)",  "✕"};
-    case MessageType::Warning: return {"#E6A23C", "rgba(253,246,236,225)", "rgb(190,130,40)", "!"};
+    case MessageType::Success: return {"#67C23A", QColor(240, 249, 235, 220), "rgb(60,160,40)",  "✓"};
+    case MessageType::Error:   return {"#F56C6C", QColor(254, 240, 240, 225), "rgb(200,80,80)",  "✕"};
+    case MessageType::Warning: return {"#E6A23C", QColor(253, 246, 236, 225), "rgb(190,130,40)", "!"};
     case MessageType::Info:
-    default:                   return {"#409EFF", "rgba(240,247,255,225)", "rgb(50,120,210)", "i"};
+    default:                   return {"#409EFF", QColor(240, 247, 255, 225), "rgb(50,120,210)", "i"};
     }
 }
 }
@@ -71,12 +76,23 @@ void MessageItem::buildUi()
                              .arg(QString::fromUtf8(sc.color)));
     layout->addWidget(icon);
 
-    // 文本
-    m_label = new QLabel(m_content);
-    m_label->setWordWrap(true);
+    // 文本：宽度 = 文本实际宽度 + 固定余量，不再被拉成整行宽。
+    // 全局 QSS 会覆盖 QLabel 的字体，所以这里先把标签挂到 this 上、写好样式并 ensurePolished，
+    // 再用它最终生效的字体去量宽度，这样量出来的值和实际绘制一致。
+    m_label = new QLabel(m_content, this);
     m_label->setStyleSheet(QStringLiteral("color: %1; font-size: 13px;")
                                .arg(QString::fromUtf8(sc.color)));
-    layout->addWidget(m_label, 1);
+    m_label->ensurePolished();
+
+    // 单行放得下就不换行；超过上限（随宿主窗口宽度，最多 kMaxLabelWidth）才自动换行
+    const int hostW = parentWidget() ? parentWidget()->width() : 800;
+    const int maxLabelW = qBound(kMinLabelWidth, hostW - 160, kMaxLabelWidth);
+    const QRect textRect = m_label->fontMetrics().boundingRect(
+        QRect(0, 0, maxLabelW, 100000), Qt::TextWordWrap, m_content);
+    const int labelW = qMax(kMinLabelWidth, textRect.width() + kLabelSlack);
+    m_label->setWordWrap(true);
+    m_label->setFixedWidth(labelW);
+    layout->addWidget(m_label);
 
     // 错误类型有手动关闭按钮
     if (m_type == MessageType::Error) {
@@ -100,7 +116,7 @@ void MessageItem::paintEvent(QPaintEvent *)
 
     QPainterPath path;
     path.addRoundedRect(rect().adjusted(0, 0, -1, -1), 10, 10);
-    p.fillPath(path, QColor(QString::fromUtf8(sc.bg)));
+    p.fillPath(path, sc.bg);
     p.setPen(QPen(QColor(QString::fromUtf8(sc.border)), 1.2));
     p.drawPath(path);
 }
@@ -154,7 +170,8 @@ void MessageManager::show(MessageType type, const QString &text, int durationMs)
     auto *item = new MessageItem(this, type, text, durationMs);
     connect(item, &MessageItem::itemRemoved, this, &MessageManager::onItemRemoved);
 
-    m_layout->insertWidget(m_layout->count() - 1, item);
+    // 水平居中，宽度取消息自身大小，不被布局拉伸成整行
+    m_layout->insertWidget(m_layout->count() - 1, item, 0, Qt::AlignHCenter);
     m_items.append(item);
 
     // 错误不自动消失

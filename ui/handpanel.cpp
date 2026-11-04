@@ -66,8 +66,8 @@ void HandPanel::buildUi()
     titleRow->addWidget(m_statusLabel);
 
     m_btnView = new QPushButton(QStringLiteral("View"));
-    m_btnView->setFixedHeight(24);
-    m_btnView->setMinimumWidth(50);
+    m_btnView->setFixedHeight(26);
+    m_btnView->setMinimumWidth(64);
     m_btnView->setToolTip(QStringLiteral("6 自由度微调 + Modbus 调试"));
     m_btnView->setCursor(Qt::PointingHandCursor);
     // 淡紫胶囊小按钮；样式见 controls/handpanel.qss（#handBtnView 清零了全局 padding / min-height）
@@ -116,10 +116,21 @@ void HandPanel::bindClient(Revo2HandClient *client)
 {
     m_client = client;
     if (m_client) {
-        m_client->registerStateCallback(
+        // 状态回调由 Revo2HandClient::notifyState() 保证在 UI 线程触发，
+        // 这里可以直接改控件。
+        // 保存句柄以便析构时注销——客户端生命周期比本控件长，
+        // 不注销会调用到已销毁的 this。
+        m_stateCbHandle = m_client->registerStateCallback(
             [this](const HandState &s) { onStateChanged(s); });
         applyState(m_client->state());
     }
+}
+
+HandPanel::~HandPanel()
+{
+    if (m_client && m_stateCbHandle)
+        m_client->unregisterStateCallback(m_stateCbHandle);
+    m_stateCbHandle = 0;
 }
 
 void HandPanel::onStateChanged(const HandState &state)
@@ -194,7 +205,7 @@ void DualHandPanel::buildUi()
     m_btnInit = new QPushButton(QStringLiteral("连接双手"));
     m_btnInit->setMinimumHeight(30);
     m_btnInit->setCursor(Qt::PointingHandCursor);
-    m_btnInit->setToolTip(QStringLiteral("setType(Generic485) + ec2rs485/init"));
+    m_btnInit->setToolTip(QStringLiteral("rs485/list 解析通道 + 释放夹爪占用 + rs485/init"));
     m_btnInit->setProperty("role", QStringLiteral("primary"));
     connect(m_btnInit, &QPushButton::clicked, this, &DualHandPanel::initRequested);
     bottom->addWidget(m_btnInit, 1);
