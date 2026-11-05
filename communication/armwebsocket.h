@@ -105,9 +105,16 @@ public:
     bool setSpeedOverride(double ratio);
     double getSpeedOverride(bool *ok = nullptr);
 
-    // ===== 清错（API 3.23 robot/clearServoError）=====
+    // ===== 清错（API 3.19 robot/clearServoError）=====
     // 对指定机器人全部关节下发驱动器故障复位；每台臂的故障独立、各清各的
-    bool clearServoError(const QString &armName);
+    //
+    // 底层用 sendAndWait（嵌套事件循环），**必须在 socket 线程以外调用**，
+    // 否则会阻塞 UI。界面上请用 clearServoErrorAsync()。
+    bool clearServoError(const QString &armName, QString *errMsg = nullptr);
+    /// 异步清错：结果在 onResult(ok, err) 回调里给出。
+    /// 内部在 QThreadPool 里跑，不会阻塞调用线程。
+    void clearServoErrorAsync(const QString &armName,
+                               std::function<void(bool, const QString &)> onResult);
     QHash<QString, bool> clearAllServoErrors(const QString &left,
                                              const QString &right);
 

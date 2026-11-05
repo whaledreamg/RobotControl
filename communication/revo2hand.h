@@ -148,8 +148,9 @@ public:
                              QObject *parent = nullptr);
     ~Revo2HandClient() override;
 
-    /// 初始化：rs485/list 解析 channel + 释放夹爪占用 + rs485/init
+    /// 初始化：rs485/list 解析 channel + rs485/init
     /// （API 1.212.0 起 ec2rs485/* 迁为 rs485/*，gripper/setType 已删除）
+    /// 若 init 报 23252（厂商夹爪占用），才追加停用夹爪协议并重试。
     /// 返回 {ok, errStr}
     QPair<bool, QString> init(bool force = false);
 
@@ -212,7 +213,8 @@ signals:
 private:
     QByteArray ec2rsWriteRead(const QByteArray &data, int readLength);
     QString initChannel();
-    /// 通道被夹爪协议占用时，经 peripheral/setDeviceEnabled 停用本从站上的夹爪协议
+    /// 兜底：通道被夹爪协议占用时，经 peripheral/setDeviceEnabled 停用本从站上的夹爪协议。
+    /// 仅在 rs485/init 报 23252 时调用；查不到占用时视为无需释放。
     QString releaseChannel(const QString &channel);
     void notifyState();
     /// 通道是否已 init（线程安全读取）

@@ -46,6 +46,7 @@
 #include <QThreadPool>
 #include <QVector>
 #include <cmath>
+#include <memory>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -397,8 +398,67 @@ void MainWindow::onSettingsClicked()
 
 void MainWindow::onClearErrorClicked()
 {
-    // 实际项目: 通过 m_agvClient 调用复位/清除异常接口
-    statusBar()->showMessage(QStringLiteral("已清除异常"), 2000);
+    if (!m_leftArm) {
+        if (m_messageManager)
+            m_messageManager->warning(QStringLiteral("请先连接机械臂"));
+        return;
+    }
+    if (!m_leftArm->isConnected()) {
+        if (m_messageManager)
+            m_messageManager->warning(QStringLiteral("机械臂未连接"));
+        return;
+    }
+
+    // 清错要等驱动器反馈确认故障位清除，最长 5 s。底层走 sendAndWait
+    // （嵌套事件循环），在 UI 线程调用会冻住界面，因此用异步接口。
+    //
+    // 臂名必须用控制器 robot/list 解析出的真实名（leftArmName()/
+    // rightArmName()），写配置里的名字会被判成未知机器人。
+    const QString left  = m_leftArm->leftArmName();
+    const QString right = m_leftArm->rightArmName();
+
+    QStringList targets;
+    if (!left.isEmpty())  targets << left;
+    if (!right.isEmpty()) targets << right;
+    if (targets.isEmpty()) {
+        if (m_messageManager)
+            m_messageManager->warning(QStringLiteral("未获取到机械臂名称，无法清错"));
+        return;
+    }
+
+    if (ui->btnClearError) ui->btnClearError->setEnabled(false);
+
+    auto *mm = m_messageManager;
+    QPointer<MainWindow> self(this);
+
+    // 计数器与失败列表要活到所有回调都回来为止，因此放堆上（shared_ptr）。
+    // 用栈变量被异步回调捕获会在函数返回后成为悬垂引用。
+    struct ClearState {
+        int pending = 0;
+        QStringList failures;
+    };
+    auto st = std::make_shared<ClearState>();
+    st->pending = targets.size();
+
+    for (const QString &armName : targets) {
+        m_leftArm->clearServoErrorAsync(armName, [self, mm, armName, st](bool ok,
+                                                                        const QString &err) {
+            if (!ok)
+                st->failures << (err.isEmpty()
+                                     ? QStringLiteral("%1 清错失败").arg(armName)
+                                     : err);
+            if (--st->pending > 0)
+                return;   // 还没全部回来
+            if (!self) return;
+            if (self->ui->btnClearError) self->ui->btnClearError->setEnabled(true);
+            if (!mm) return;
+            if (st->failures.isEmpty()) {
+                mm->success(QStringLiteral("清除异常指令已下发"));
+            } else {
+                mm->error(st->failures.join(QStringLiteral("；")));
+            }
+        });
+    }
 }
 
 void MainWindow::onUpdateClock()

@@ -238,12 +238,25 @@ QPair<bool, QString> Revo2HandClient::init(bool force)
     QString cerr = resolveChannel(&channel, true);
     if (!cerr.isEmpty()) return {false, cerr};
 
-    // 2) 通道被夹爪协议占用时先交出（取代已删除的 gripper/setType）
-    const QString rerr = releaseChannel(channel);
-    if (!rerr.isEmpty()) return {false, rerr};
+    // 2) rs485/init
+    QString err = initChannel();
 
-    // 3) rs485/init
-    const QString err = initChannel();
+    // 通道被厂商夹爪协议占用时，init 会返回 23252「厂商夹爪占用」。
+    // 这时才走释放流程：停用该通道上的夹爪协议，等占用解除后重新 init。
+    //
+    // 注意：释放流程**不能**作为连接的必经步骤。peripheral/getConfig 与
+    // rs485/getStatus 在很多正常工况下都会返回错误或空 revision（例如
+    // 通道未初始化、配置服务未装载、持久化诊断），一旦把它们当致命错误，
+    // 灵巧手就再也连不上。ActionPlanner 的可用实现就是不做这一步：
+    // 直接 rs485/list → rs485/init。
+    if (err.contains(QStringLiteral("23252"))) {
+        const QString rerr = releaseChannel(channel);
+        if (!rerr.isEmpty()) return {false, rerr};
+
+        err = initChannel();
+        if (!err.isEmpty()) return {false, err};
+    }
+
     if (!err.isEmpty()) return {false, err};
 
     {
@@ -299,11 +312,15 @@ QString Revo2HandClient::resolveChannel(QString *channel, bool force)
 
 QString Revo2HandClient::releaseChannel(const QString &channel)
 {
+    // 这是**兜底**路径：仅当 rs485/init 报 23252（厂商夹爪占用）时才走到。
+    // 因此这里的每一步都不能把「查不到 / 读不出」当成致命错误——
+    // 查不到就说明不需要释放，直接返回成功即可。
     QJsonObject sq;
     sq.insert("channel", channel);
     const QJsonObject st = varToObj(m_ws->sendAndWaitSafe(
         QStringLiteral("rs485/getStatus"), sq, 3000));
-    if (st.isEmpty()) return QStringLiteral("rs485/getStatus 无响应");
+    if (st.isEmpty())
+        return QStringLiteral("rs485/getStatus 无响应，无法确认通道占用情况");
     if (st.contains("err"))
         return QStringLiteral("rs485/getStatus err(%1): %2")
             .arg(st.value("err").toObject().value("code").toInt())
@@ -324,10 +341,17 @@ QString Revo2HandClient::releaseChannel(const QString &channel)
     const QJsonArray grippers =
         cdb.value("runtime").toObject().value("gripper").toArray();
     const QString want = ec2rsSlave();
+
+    // runtime 里找不到本从站上已启用的夹爪协议时，没什么可停用的：
+    // 占用很可能来自别的从站或已被别的进程处理。直接返回成功，
+    // 让上层的 rs485/init 再试一次，由它给出权威结论。
+    bool found = false;
     for (const QJsonValue &gv : grippers) {
         const QJsonObject g = gv.toObject();
         if (g.value("slave").toString() != want || !g.value("enabled").toBool())
             continue;
+        found = true;
+
         QJsonObject db;
         db.insert("revision", revision);
         db.insert("appliedRevision", applied);
@@ -346,6 +370,11 @@ QString Revo2HandClient::releaseChannel(const QString &channel)
         if (nd.contains("revision")) revision = nd.value("revision").toString();
         if (nd.contains("appliedRevision")) applied = nd.value("appliedRevision").toString();
     }
+
+    // runtime 里没有匹配的已启用夹爪协议 → 无需等待释放，直接返回。
+    // 否则下面的轮询会白等满 10s 才报错。
+    if (!found)
+        return {};
 
     // 等收尾结束并解除占用（最长 10s）
     QElapsedTimer timer; timer.start();

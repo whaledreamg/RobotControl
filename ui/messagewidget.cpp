@@ -19,6 +19,13 @@ constexpr int kMinLabelWidth   = 160;   // 文字区最小宽度（短消息也�
 constexpr int kMaxLabelWidth   = 640;   // 文字区最大宽度（同 Python 版），超出则换行
 constexpr int kLabelSlack      = 6;     // 文本宽度之外的固定余量，避免字体取整导致末尾被换行/截断
 
+/// 错误类型的存活时长（ms）。
+///
+/// 错误弹窗必须能自己消失。旧实现给 Error 类型单独开了「不自动消失」的
+/// 分支，导致 error() 里传的时长完全失效，弹窗只能靠手点 ✕ 关闭——
+/// 在 Android 上那个 ✕ 按钮还可能收不到触摸事件，弹窗就永久挂在界面上。
+constexpr int kErrorDuration = 10000;
+
 struct StyleConf {
     const char *border;
     QColor      bg;     // 半透明背景。注意必须用 QColor(r,g,b,a)：
@@ -58,6 +65,18 @@ MessageItem::MessageItem(QWidget *parent, MessageType type,
     effect->setOffset(0, 3);
     effect->setColor(QColor(0, 0, 0, 60));
     setGraphicsEffect(effect);
+
+    m_lifeTimer = new QTimer(this);
+    m_lifeTimer->setSingleShot(true);
+    connect(m_lifeTimer, &QTimer::timeout, this, &MessageItem::onLifeTimeout);
+}
+
+void MessageItem::startLifeTimer()
+{
+    // 用单次定时器而不是直接删控件，是为了让这一帧的绘制先完成，
+    // 弹窗不会闪一下就消失。
+    m_lifeTimer->stop();
+    m_lifeTimer->start(m_durationMs);
 }
 
 void MessageItem::buildUi()
@@ -174,11 +193,10 @@ void MessageManager::show(MessageType type, const QString &text, int durationMs)
     m_layout->insertWidget(m_layout->count() - 1, item, 0, Qt::AlignHCenter);
     m_items.append(item);
 
-    // 错误不自动消失
-    if (type != MessageType::Error) {
-        QTimer::singleShot(durationMs > 0 ? durationMs : kDefaultDuration,
-                           item, &MessageItem::onLifeTimeout);
-    }
+    // 所有类型都自动消失（含错误）。旧实现给 Error 开了「不自动消失」的
+    // 分支，error() 里传的时长被完全忽略，弹窗只能手动关闭——
+    // Android 上那个 ✕ 还可能收不到触摸事件，弹窗就永久挂在界面上。
+    item->startLifeTimer();
 
     emit messageShown(type, text);
     relayout();
@@ -187,7 +205,8 @@ void MessageManager::show(MessageType type, const QString &text, int durationMs)
 void MessageManager::info(const QString &text)    { show(MessageType::Info, text); }
 void MessageManager::success(const QString &text) { show(MessageType::Success, text); }
 void MessageManager::warning(const QString &text) { show(MessageType::Warning, text); }
-void MessageManager::error(const QString &text)   { show(MessageType::Error, text, 8000); }
+// 错误弹窗停留 10 秒后自动消失
+void MessageManager::error(const QString &text)   { show(MessageType::Error, text, kErrorDuration); }
 
 void MessageManager::onItemRemoved(MessageItem *item)
 {

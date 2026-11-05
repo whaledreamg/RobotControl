@@ -9,6 +9,7 @@
 class QLabel;
 class QPushButton;
 class QVBoxLayout;
+class QTimer;
 
 /// 消息类型
 enum class MessageType {
@@ -25,7 +26,7 @@ enum class MessageType {
  *   - 顶部居中堆叠显示
  *   - 4 种类型：INFO / SUCCESS / WARNING / ERROR
  *   - 自动堆叠排序 + 淡入淡出
- *   - 错误类型有手动关闭按钮，其他类型自动消失
+ *   - 错误类型有手动关闭按钮，同时也会在 10 秒后自动消失
  *   - 错误类型去重：相同内容不会重复弹
  */
 class MessageItem : public QWidget
@@ -37,6 +38,10 @@ public:
 
     MessageType type() const { return m_type; }
     QString content() const { return m_content; }
+
+    /// 启动存活倒计时。倒计时归零后自动关闭弹窗。
+    /// 由 MessageManager 在弹窗加入界面后调用。
+    void startLifeTimer();
 
 signals:
     void itemRemoved(MessageItem *item);
@@ -57,6 +62,8 @@ private:
     QLabel *m_label = nullptr;
     QPushButton *m_closeBtn = nullptr;
     QWidget *m_body = nullptr;
+    /// 存活倒计时器（单次）。归零后触发 onLifeTimeout 自动关闭。
+    QTimer *m_lifeTimer = nullptr;
 };
 
 /**

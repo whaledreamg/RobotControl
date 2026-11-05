@@ -80,24 +80,32 @@ void HandPanel::buildUi()
 
     layout->addLayout(titleRow);
 
-    // ---- 开 / 合按钮 ----
+    // ---- 抓取 / 释放按钮 ----
+    //
+    // 标签与实际动作必须一致：
+    //   抓取 = 预设「一把抓」= 所有 DOF 1000 = 握拳（合拢）
+    //   释放 = 预设「释放」  = 所有 DOF 0    = 张开
+    // 旧标签写成「✊ 开 抓取」/「🖐 合 释放」，「开/合」二字与动作正好相反，
+    // 用户按下「开」却看到手握紧，容易误操作。
     auto *btnRow = new QHBoxLayout;
     btnRow->setSpacing(8);
     btnRow->setContentsMargins(0, 0, 0, 0);
 
-    m_btnGrab = new QPushButton(QStringLiteral("✊  开  抓取"));
+    m_btnGrab = new QPushButton(QStringLiteral("✊  抓取"));
     m_btnGrab->setMinimumHeight(36);
     m_btnGrab->setCursor(Qt::PointingHandCursor);
     m_btnGrab->setProperty("role", QStringLiteral("success"));
+    m_btnGrab->setToolTip(QStringLiteral("握拳：所有 DOF 归到最大"));
     connect(m_btnGrab, &QPushButton::clicked, this, [this]() {
         emit grabRequested(m_side);
     });
     btnRow->addWidget(m_btnGrab, 1);
 
-    m_btnRelease = new QPushButton(QStringLiteral("🖐  合  释放"));
+    m_btnRelease = new QPushButton(QStringLiteral("🖐  释放"));
     m_btnRelease->setMinimumHeight(36);
     m_btnRelease->setCursor(Qt::PointingHandCursor);
     m_btnRelease->setProperty("role", QStringLiteral("warning"));
+    m_btnRelease->setToolTip(QStringLiteral("张开：所有 DOF 归零"));
     connect(m_btnRelease, &QPushButton::clicked, this, [this]() {
         emit releaseRequested(m_side);
     });

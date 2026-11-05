@@ -4,6 +4,7 @@
 #include <QJsonDocument>
 #include <QJsonParseError>
 #include <QThread>
+#include <QThreadPool>
 #include <QTimer>
 #include <QUrl>
 #include <QDebug>
@@ -588,24 +589,57 @@ double ArmWebSocket::getSpeedOverride(bool *ok)
 // ---------------------------------------------------------------------------
 // 清错
 // ---------------------------------------------------------------------------
-bool ArmWebSocket::clearServoError(const QString &armName)
+bool ArmWebSocket::clearServoError(const QString &armName, QString *errMsg)
 {
-    if (armName.isEmpty())
+    const auto fail = [errMsg](const QString &msg) {
+        if (errMsg) *errMsg = msg;
         return false;
+    };
+
+    if (armName.isEmpty())
+        return fail(QStringLiteral("缺少机械臂名称"));
+    if (!isConnected())
+        return fail(QStringLiteral("机械臂未连接"));
+
     QJsonObject db;
     db.insert("name", armName);
-    const QVariant r = sendAndWait(QStringLiteral("robot/clearServoError"), db, 3000);
+    // 用 sendAndWaitSafe 而不是 sendAndWait：前者把「发送」排回 socket 线程、
+    // 等待在调用方线程完成，可以从工作线程安全调用；后者会在工作线程里
+    // 跑嵌套事件循环，而 QWebSocket 的信号只在 socket 线程派发，
+    // 结果必然等超时（还会跨线程操作 m_pending）。
+    const QVariant r = sendAndWaitSafe(QStringLiteral("robot/clearServoError"),
+                                        db, 5000);
     if (!r.isValid()) {
         qWarning().noquote() << QStringLiteral("[Arm WS] clearServoError(%1) 无响应").arg(armName);
-        return false;
+        return fail(QStringLiteral("%1 清错无响应（超时 5s）").arg(armName));
     }
     const QJsonObject resp = varToObj(r);
     if (resp.contains("err")) {
+        const QString msg = QStringLiteral("%1 清错失败：%2").arg(armName, errText(resp));
         qWarning().noquote() << QStringLiteral("[Arm WS] clearServoError(%1) 失败: %2")
                                     .arg(armName, errText(resp));
-        return false;
+        return fail(msg);
     }
-    return resp.value("db").toBool();
+    // db 为布尔：true 表示复位脉冲已输出且伺服故障位已清除；
+    // false 表示当前无锁可解（空操作），不算错误。
+    if (errMsg) errMsg->clear();
+    return true;
+}
+
+void ArmWebSocket::clearServoErrorAsync(const QString &armName,
+                                         std::function<void(bool, const QString &)> onResult)
+{
+    // 底层 sendAndWait 会跑嵌套事件循环，若在 UI 线程调用会把界面冻住
+    // （清错最多要等 5 s 拿驱动器反馈）。因此丢到线程池里跑。
+    QThreadPool::globalInstance()->start([this, armName, onResult]() {
+        QString err;
+        const bool ok = clearServoError(armName, &err);
+        if (!onResult) return;
+        // 结果回投本对象线程（socket 线程 = UI 线程）
+        QMetaObject::invokeMethod(this, [onResult, ok, err]() {
+            onResult(ok, err);
+        }, Qt::QueuedConnection);
+    });
 }
 
 QHash<QString, bool> ArmWebSocket::clearAllServoErrors(const QString &left,
@@ -616,7 +650,6 @@ QHash<QString, bool> ArmWebSocket::clearAllServoErrors(const QString &left,
     if (!right.isEmpty()) results.insert(right, clearServoError(right));
     return results;
 }
-
 // ---------------------------------------------------------------------------
 // 工程
 // ---------------------------------------------------------------------------
